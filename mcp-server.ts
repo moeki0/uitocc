@@ -48,6 +48,9 @@ async function pollChannelEvents() {
       if (event.contextTexts?.length > 0) {
         content += `\n\nVisible text:\n${event.contextTexts.map((t: string) => `- ${t}`).join("\n")}`;
       }
+      if (event.audioTranscription) {
+        content += `\n\nRecent system audio:\n${event.audioTranscription}`;
+      }
 
       await mcp.notification({
         method: "notifications/claude/channel",

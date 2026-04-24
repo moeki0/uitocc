@@ -122,6 +122,31 @@ struct ChannelEvent: Codable {
     let windowTitle: String
     let cursorText: String?
     let contextTexts: [String]
+    let audioTranscription: String?
+}
+
+// Transcribe recent audio if available
+var audioTranscription: String? = nil
+let transcribePath = (CommandLine.arguments[0] as NSString).deletingLastPathComponent + "/uitocc-transcribe"
+if FileManager.default.fileExists(atPath: transcribePath) {
+    let transcribeProc = Process()
+    transcribeProc.executableURL = URL(fileURLWithPath: transcribePath)
+    let pipe = Pipe()
+    transcribeProc.standardOutput = pipe
+    transcribeProc.standardError = FileHandle.nullDevice
+    do {
+        try transcribeProc.run()
+        transcribeProc.waitUntilExit()
+        if transcribeProc.terminationStatus == 0 {
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let text = text, !text.isEmpty {
+                audioTranscription = text
+            }
+        }
+    } catch {
+        fputs("Transcribe failed: \(error)\n", stderr)
+    }
 }
 
 let isoFormatter = ISO8601DateFormatter()
@@ -132,7 +157,8 @@ let event = ChannelEvent(
     app: appName,
     windowTitle: wTitle,
     cursorText: cursorText,
-    contextTexts: contextTexts
+    contextTexts: contextTexts,
+    audioTranscription: audioTranscription
 )
 
 let encoder = JSONEncoder()
