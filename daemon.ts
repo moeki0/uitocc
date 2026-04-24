@@ -64,9 +64,8 @@ interface ScreenState {
 }
 
 function getScreenState(): ScreenState | null {
-  const result = Bun.spawnSync(["./ax_text"], {
-    cwd: import.meta.dir,
-  });
+  const axTextPath = join(dirname(process.execPath), "uitocc-ax-text");
+  const result = Bun.spawnSync([axTextPath]);
   if (result.exitCode !== 0) return null;
 
   const lines = new TextDecoder().decode(result.stdout).trim().split("\n");

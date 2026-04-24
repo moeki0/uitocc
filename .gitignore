@@ -3,3 +3,4 @@ ax_text
 send
 *.db
 .claude/
+.bun-build
