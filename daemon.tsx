@@ -31,14 +31,37 @@ db.run(`CREATE TABLE IF NOT EXISTS screen_states (
 db.run(`CREATE INDEX IF NOT EXISTS idx_screen_states_timestamp ON screen_states(timestamp)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_screen_states_app ON screen_states(app)`);
 
+// Add embedding column if missing
+try { db.run(`ALTER TABLE screen_states ADD COLUMN embedding BLOB`); } catch {}
+
 const insertStmt = db.prepare(
-  `INSERT INTO screen_states (timestamp, pid, window_index, app, window_title, texts) VALUES (?, ?, ?, ?, ?, ?)`
+  `INSERT INTO screen_states (timestamp, pid, window_index, app, window_title, texts, embedding) VALUES (?, ?, ?, ?, ?, ?, ?)`
 );
 
 // --- AX text helper ---
 const AX_TEXT_PATH = join(dirname(process.execPath), "uitocc-ax-text");
 const AX_TEXT_FALLBACK = join(import.meta.dir, "uitocc-ax-text");
 const axTextBin = await Bun.file(AX_TEXT_PATH).exists() ? AX_TEXT_PATH : AX_TEXT_FALLBACK;
+
+const EMBED_PATH = join(dirname(process.execPath), "uitocc-embed");
+const EMBED_FALLBACK = join(import.meta.dir, "uitocc-embed");
+const embedBin = await Bun.file(EMBED_PATH).exists() ? EMBED_PATH : EMBED_FALLBACK;
+
+function generateEmbedding(text: string): Buffer | null {
+  try {
+    const proc = Bun.spawnSync([embedBin], {
+      stdin: new TextEncoder().encode(text),
+      stderr: "pipe",
+    });
+    if (proc.exitCode !== 0) return null;
+    const vec: number[] = JSON.parse(proc.stdout.toString().trim());
+    const buf = Buffer.alloc(vec.length * 8);
+    for (let i = 0; i < vec.length; i++) buf.writeDoubleBE(vec[i], i * 8);
+    return buf;
+  } catch {
+    return null;
+  }
+}
 
 interface WindowInfo {
   pid: number;
@@ -172,7 +195,9 @@ function App() {
           const key = windowKey(tw);
           const w = foundMap.get(key);
           if (!w || w.texts.length === 0) continue;
-          insertStmt.run(ts, w.pid, w.window_index, w.app, w.title, JSON.stringify(w.texts));
+          const textForEmbed = `${w.app} ${w.title} ${w.texts.slice(0, 10).join(" ")}`.slice(0, 1000);
+          const emb = generateEmbedding(textForEmbed);
+          insertStmt.run(ts, w.pid, w.window_index, w.app, w.title, JSON.stringify(w.texts), emb);
           setRecordCount((c) => c + 1);
         }
       }

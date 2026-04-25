@@ -8,7 +8,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { Database } from "bun:sqlite";
 import { homedir } from "os";
-import { join } from "path";
+import { join, dirname } from "path";
 import { existsSync, unlinkSync } from "fs";
 
 const DATA_DIR = join(homedir(), "Library", "Application Support", "uitocc");
@@ -24,6 +24,43 @@ function openDb(): Database | null {
   } catch {
     return null;
   }
+}
+
+// --- Embedding helpers ---
+const EMBED_PATH = join(dirname(process.execPath), "uitocc-embed");
+const EMBED_FALLBACK = join(import.meta.dir, "uitocc-embed");
+const embedBin = existsSync(EMBED_PATH) ? EMBED_PATH : EMBED_FALLBACK;
+
+function queryEmbedding(text: string): Float64Array | null {
+  try {
+    const proc = Bun.spawnSync([embedBin], {
+      stdin: new TextEncoder().encode(text),
+      stderr: "pipe",
+    });
+    if (proc.exitCode !== 0) return null;
+    const vec: number[] = JSON.parse(proc.stdout.toString().trim());
+    return new Float64Array(vec);
+  } catch {
+    return null;
+  }
+}
+
+function cosineSimilarity(a: Float64Array, b: Float64Array): number {
+  let dot = 0, normA = 0, normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+function blobToFloat64Array(blob: Buffer): Float64Array {
+  const arr = new Float64Array(blob.length / 8);
+  for (let i = 0; i < arr.length; i++) {
+    arr[i] = blob.readDoubleBE(i * 8);
+  }
+  return arr;
 }
 
 const mcp = new Server(
@@ -102,6 +139,32 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       const limit = ((args as any).limit as number) || 20;
       const since = new Date(Date.now() - minutes * 60_000).toISOString();
 
+      // Try vector search first
+      const queryVec = queryEmbedding(query);
+      if (queryVec) {
+        const rows = db.prepare(
+          `SELECT timestamp, app, window_title, texts, embedding FROM screen_states
+           WHERE timestamp > ? AND embedding IS NOT NULL
+           ORDER BY timestamp DESC LIMIT 200`
+        ).all(since) as any[];
+
+        if (rows.length > 0) {
+          const scored = rows.map((r) => {
+            const emb = blobToFloat64Array(r.embedding);
+            const score = cosineSimilarity(queryVec, emb);
+            return { ...r, score };
+          }).sort((a, b) => b.score - a.score).slice(0, limit);
+
+          const result = scored.map((r) => {
+            const texts = JSON.parse(r.texts) as string[];
+            return `[${r.timestamp}] ${r.app} — ${r.window_title} (similarity: ${r.score.toFixed(3)})\n${texts.slice(0, 10).join("\n")}`;
+          }).join("\n\n---\n\n");
+
+          return { content: [{ type: "text" as const, text: result }] };
+        }
+      }
+
+      // Fallback to LIKE search
       const rows = db.prepare(
         `SELECT timestamp, app, window_title, texts FROM screen_states
          WHERE timestamp > ? AND (app LIKE ? OR window_title LIKE ? OR texts LIKE ?)

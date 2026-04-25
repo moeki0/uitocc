@@ -2,6 +2,7 @@ node_modules/
 /uitocc
 /uitocc-ax-text
 /uitocc-send
+/uitocc-embed
 *.db
 *.bun-build
 .claude/

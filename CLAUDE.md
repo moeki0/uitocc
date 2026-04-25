@@ -17,10 +17,11 @@ bun daemon.tsx    # start watch daemon with TUI
 - **mcp-server.ts**: MCP server with search_screen_history / recent_screens tools, plus channel notifications for user_send
 - **send.swift**: One-shot shortcut script, writes channel_event.json
 - **ax_text.swift**: AX API text extractor (`--all` for all windows as JSON)
+- **embed.swift**: NLEmbedding (macOS NaturalLanguage) で512次元センテンス埋め込みを生成
 
 ## MCP Tools
 
-- `search_screen_history(query, minutes?, limit?)` — search observed screen text
+- `search_screen_history(query, minutes?, limit?)` — search observed screen text (vector similarity via NLEmbedding, LIKE fallback)
 - `recent_screens(minutes?, limit?)` — recent screen states
 
 When the user references something they were looking at, or screen context would help understand their request, proactively use these tools.
