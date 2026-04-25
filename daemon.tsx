@@ -3,7 +3,7 @@
  * uitocc watch daemon — TUI for monitoring windows with per-window permissions
  */
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { render, Box, Text, useInput, useApp } from "ink";
 import { Database } from "bun:sqlite";
 import { join } from "path";
@@ -107,8 +107,14 @@ const RECORD_MS = 5000;
 function App() {
   const { exit } = useApp();
   const [windows, setWindows] = useState<Map<string, TrackedWindow>>(new Map());
+  const windowsRef = useRef<Map<string, TrackedWindow>>(new Map());
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [recordCount, setRecordCount] = useState(0);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    windowsRef.current = windows;
+  }, [windows]);
 
   // Poll for windows
   useEffect(() => {
@@ -178,12 +184,9 @@ function App() {
       while (active) {
         await Bun.sleep(RECORD_MS);
         const allowedWindows: TrackedWindow[] = [];
-        setWindows((prev) => {
-          for (const [, w] of prev) {
-            if (w.permission === "allowed") allowedWindows.push(w);
-          }
-          return prev;
-        });
+        for (const [, w] of windowsRef.current) {
+          if (w.permission === "allowed") allowedWindows.push(w);
+        }
 
         if (allowedWindows.length === 0) continue;
 
