@@ -317,6 +317,7 @@ function App() {
               app: w.app,
               windowTitle: w.title,
               texts: uniqueTexts,
+              screenshotPath: screenshotPath,
             }));
             addBroadcastLog(`${time} TV → ${w.app} — ${(w.title || "").slice(0, 20)}`);
           }

@@ -445,9 +445,22 @@ async function pollChannelEvents() {
         unlinkSync(CHANNEL_TV_EVENT_PATH);
         const event = JSON.parse(raw);
 
-        let content = `Screen: **${event.app}** — "${event.windowTitle}"`;
+        let textContent = `Screen: **${event.app}** — "${event.windowTitle}"`;
         if (event.texts?.length > 0) {
-          content += `\n\n${event.texts.join("\n")}`;
+          textContent += `\n\n${event.texts.join("\n")}`;
+        }
+
+        // Build content with optional screenshot
+        let content: any = textContent;
+        if (event.screenshotPath && existsSync(event.screenshotPath)) {
+          try {
+            const imgBuf = await Bun.file(event.screenshotPath).arrayBuffer();
+            const base64 = Buffer.from(imgBuf).toString("base64");
+            content = [
+              { type: "text", text: textContent },
+              { type: "image", data: base64, mimeType: "image/png" },
+            ];
+          } catch {}
         }
 
         await mcp.notification({
