@@ -1,4 +1,4 @@
-# uitocc
+# tunr
 
 Screen context provider for Claude Code via MCP channels.
 
@@ -6,8 +6,8 @@ Screen context provider for Claude Code via MCP channels.
 
 ```bash
 bun install
-swiftc ax_text.swift -o uitocc-ax-text -O
-swiftc send.swift -o uitocc-send -O
+swiftc ax_text.swift -o tunr-ax-text -O
+swiftc send.swift -o tunr-send -O
 bun daemon.tsx    # start watch daemon with TUI
 ```
 

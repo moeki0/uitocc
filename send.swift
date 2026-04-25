@@ -1,5 +1,5 @@
 #!/usr/bin/env swift
-/// Send current screen context via uitocc channel
+/// Send current screen context via tunr channel
 import Cocoa
 import ApplicationServices
 import Foundation
@@ -143,7 +143,7 @@ guard let data = try? encoder.encode(event) else {
 }
 
 let dataDir = FileManager.default.homeDirectoryForCurrentUser
-    .appendingPathComponent("Library/Application Support/uitocc")
+    .appendingPathComponent("Library/Application Support/tunr")
 let eventPath = dataDir.appendingPathComponent("channel_event.json")
 
 try? FileManager.default.createDirectory(at: dataDir, withIntermediateDirectories: true)

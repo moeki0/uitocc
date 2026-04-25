@@ -1,11 +1,11 @@
 #!/usr/bin/env bun
 /**
- * uitocc — Screen context provider for Claude Code
+ * tunr — Screen context provider for Claude Code
  *
  * Usage:
- *   uitocc mcp      Start the MCP server (called by Claude Code)
- *   uitocc send     Send current screen to Claude Code
- *   uitocc watch    Start the watch daemon with TUI
+ *   tunr mcp      Start the MCP server (called by Claude Code)
+ *   tunr send     Send current screen to Claude Code
+ *   tunr watch    Start the watch daemon with TUI
  */
 
 const command = process.argv[2];
@@ -16,7 +16,7 @@ switch (command) {
     break;
   case "send": {
     const { join, dirname } = await import("path");
-    const sendPath = join(dirname(process.execPath), "uitocc-send");
+    const sendPath = join(dirname(process.execPath), "tunr-send");
     const result = Bun.spawnSync([sendPath], { stdout: "inherit", stderr: "inherit" });
     process.exit(result.exitCode);
   }
@@ -28,11 +28,11 @@ switch (command) {
     console.log((await import("./package.json")).version);
     break;
   default:
-    console.log(`uitocc — Screen context provider for Claude Code
+    console.log(`tunr — Screen context provider for Claude Code
 
 Usage:
-  uitocc mcp      Start the MCP server
-  uitocc send     Send current screen to Claude Code
-  uitocc watch    Start the watch daemon with TUI`);
+  tunr mcp      Start the MCP server
+  tunr send     Send current screen to Claude Code
+  tunr watch    Start the watch daemon with TUI`);
     process.exit(command ? 1 : 0);
 }

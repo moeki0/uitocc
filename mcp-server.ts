@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * uitocc MCP server — Provides screen context to Claude Code
+ * tunr MCP server — Provides screen context to Claude Code
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -11,12 +11,12 @@ import { homedir } from "os";
 import { join, dirname } from "path";
 import { existsSync, unlinkSync } from "fs";
 
-const DATA_DIR = join(homedir(), "Library", "Application Support", "uitocc");
+const DATA_DIR = join(homedir(), "Library", "Application Support", "tunr");
 const CHANNEL_EVENT_PATH = join(DATA_DIR, "channel_event.json");
 const CHANNEL_TV_EVENT_PATH = join(DATA_DIR, "channel_tv_event.json");
 const CHANNEL_RADIO_EVENT_PATH = join(DATA_DIR, "channel_audio_event.json");
 const CHANNEL_STATUS_PATH = join(DATA_DIR, "channel_status.json");
-const DB_PATH = join(DATA_DIR, "uitocc.db");
+const DB_PATH = join(DATA_DIR, "tunr.db");
 
 function openDb(): Database | null {
   try {
@@ -30,8 +30,8 @@ function openDb(): Database | null {
 }
 
 // --- Embedding helpers ---
-const EMBED_PATH = join(dirname(process.execPath), "uitocc-embed");
-const EMBED_FALLBACK = join(import.meta.dir, "uitocc-embed");
+const EMBED_PATH = join(dirname(process.execPath), "tunr-embed");
+const EMBED_FALLBACK = join(import.meta.dir, "tunr-embed");
 const embedBin = existsSync(EMBED_PATH) ? EMBED_PATH : EMBED_FALLBACK;
 
 function queryEmbedding(text: string): Float64Array | null {
@@ -77,14 +77,14 @@ async function syncChannelStatus() {
 }
 
 const mcp = new Server(
-  { name: "uitocc", version: "0.6.0" },
+  { name: "tunr", version: "0.6.0" },
   {
     capabilities: {
       experimental: { "claude/channel": {} },
       tools: {},
     },
     instructions: [
-      "uitocc events arrive as <channel source=\"uitocc\" ...>.",
+      "tunr events arrive as <channel source=\"tunr\" ...>.",
       "event=user_send: User pressed shortcut to share current screen.",
       "event=tv: Real-time screen content changes (enable with toggle_tv).",
       "event=radio: Real-time audio transcription (enable with toggle_radio).",
@@ -425,7 +425,7 @@ async function pollChannelEvents() {
           params: {
             content,
             meta: {
-              source: "uitocc",
+              source: "tunr",
               event: "user_send",
               app: event.app,
               windowTitle: event.windowTitle,
@@ -453,7 +453,7 @@ async function pollChannelEvents() {
             params: {
               content: `Screen update:\n\n${lines.join("\n\n")}`,
               meta: {
-                source: "uitocc",
+                source: "tunr",
                 event: "tv",
                 timestamp: event.timestamp,
               },
@@ -467,7 +467,7 @@ async function pollChannelEvents() {
             method: "notifications/claude/channel",
             params: {
               content: textContent,
-              meta: { source: "uitocc", event: "tv", app: event.app, windowTitle: event.windowTitle },
+              meta: { source: "tunr", event: "tv", app: event.app, windowTitle: event.windowTitle },
             },
           });
         }
@@ -486,7 +486,7 @@ async function pollChannelEvents() {
           params: {
             content: `Audio transcript:\n${event.transcript}`,
             meta: {
-              source: "uitocc",
+              source: "tunr",
               event: "radio",
               timestamp: event.timestamp,
             },

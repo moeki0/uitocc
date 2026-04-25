@@ -1,8 +1,8 @@
 #!/usr/bin/env swift
 /// Generate sentence embeddings using Apple's NaturalLanguage framework
 /// Usage:
-///   echo "text" | uitocc-embed          — single text, output JSON array of floats
-///   echo "text1\ntext2" | uitocc-embed --batch  — one vector per line, output JSON array of arrays
+///   echo "text" | tunr-embed          — single text, output JSON array of floats
+///   echo "text1\ntext2" | tunr-embed --batch  — one vector per line, output JSON array of arrays
 import Foundation
 import NaturalLanguage
 

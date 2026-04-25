@@ -1,8 +1,8 @@
-# uitocc
+# tunr
 
 Screen & audio context provider for [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
 
-uitocc captures your macOS screen and system audio, then delivers it to Claude Code through MCP — so Claude can see what you're looking at and hear what you're listening to.
+tunr captures your macOS screen and system audio, then delivers it to Claude Code through MCP — so Claude can see what you're looking at and hear what you're listening to.
 
 ## What it does
 
@@ -16,7 +16,7 @@ uitocc captures your macOS screen and system audio, then delivers it to Claude C
 ## Install
 
 ```bash
-brew install moeki0/uitocc/uitocc
+brew install moeki0/tunr/tunr
 ```
 
 ### Permissions
@@ -34,20 +34,20 @@ To capture web page text from Chrome (not just tab titles), enable AppleScript J
 
 This also works with other Chromium browsers (Edge, Brave, Vivaldi, Opera).
 
-> **Security note:** This setting allows any app with macOS Automation permission to execute JavaScript in your Chrome tabs via AppleScript. macOS TCC requires you to explicitly grant Automation access per-app, so only apps you approve can use this. However, if a malicious app gains Automation permission, it could read page content or manipulate DOM in any tab. If you're concerned, leave this setting off — uitocc will still capture window titles and native app text via the Accessibility API.
+> **Security note:** This setting allows any app with macOS Automation permission to execute JavaScript in your Chrome tabs via AppleScript. macOS TCC requires you to explicitly grant Automation access per-app, so only apps you approve can use this. However, if a malicious app gains Automation permission, it could read page content or manipulate DOM in any tab. If you're concerned, leave this setting off — tunr will still capture window titles and native app text via the Accessibility API.
 
 ### MCP server setup
 
 Register the MCP server with Claude Code:
 
 ```bash
-claude mcp add -s user uitocc -- uitocc mcp
+claude mcp add -s user tunr -- tunr mcp
 ```
 
 Start Claude Code with channels enabled (required for TV/RADIO real-time streaming):
 
 ```bash
-claude --dangerously-load-development-channels server:uitocc
+claude --dangerously-load-development-channels server:tunr
 ```
 
 ### Audio setup (optional)
@@ -85,7 +85,7 @@ brew install whisper-cpp
 Start the TUI daemon:
 
 ```bash
-uitocc watch
+tunr watch
 ```
 
 This opens a terminal UI with two main sections:
@@ -121,7 +121,7 @@ Streams recordings to Claude Code in real-time via MCP channel events.
 Capture the frontmost window and send it to Claude Code instantly:
 
 ```bash
-uitocc send
+tunr send
 ```
 
 Bind this to a keyboard shortcut (e.g. via Raycast or macOS Shortcuts) for quick screen sharing.
@@ -153,17 +153,17 @@ These tools are available to Claude Code when the MCP server is running:
 
 ## Plugin
 
-uitocc includes a Claude Code plugin that auto-invokes when you reference screen or audio content (e.g. "what was I just looking at", "what did they say in the video").
+tunr includes a Claude Code plugin that auto-invokes when you reference screen or audio content (e.g. "what was I just looking at", "what did they say in the video").
 
 ```
-/install-plugin moeki0/uitocc-skill
+/install-plugin moeki0/tunr-skill
 ```
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                  uitocc watch (TUI)                  │
+│                  tunr watch (TUI)                  │
 │                                                     │
 │  ┌─ RECORDING ────────────────────────────────────┐ │
 │  │                                                │ │
@@ -192,7 +192,7 @@ uitocc includes a Claude Code plugin that auto-invokes when you reference screen
           │                │  tools / channels
           └────────────────┘
 
-uitocc send ──────────────────────▶  channel event
+tunr send ──────────────────────▶  channel event
   (one-shot, AX API)
 ```
 
@@ -210,9 +210,9 @@ uitocc send ──────────────────────�
 
 ### Data storage
 
-All data is stored locally at `~/Library/Application Support/uitocc/`:
+All data is stored locally at `~/Library/Application Support/tunr/`:
 
-- `uitocc.db` — SQLite database with screen states and audio transcripts
+- `tunr.db` — SQLite database with screen states and audio transcripts
 - `audio/` — Audio WAV chunks (auto-cleaned after 24h)
 
 ## License

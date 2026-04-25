@@ -1,8 +1,8 @@
 node_modules/
+/tunr
+/tunr-*
 /uitocc
-/uitocc-ax-text
-/uitocc-send
-/uitocc-embed
+/uitocc-*
 *.db
 *.bun-build
 .claude/

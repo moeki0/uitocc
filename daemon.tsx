@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * uitocc watch daemon — TUI for monitoring windows with per-window permissions
+ * tunr watch daemon — TUI for monitoring windows with per-window permissions
  */
 
 import React, { useState, useEffect, useRef } from "react";
@@ -12,8 +12,8 @@ import { dirname } from "path";
 
 
 // --- DB setup ---
-const DATA_DIR = join(homedir(), "Library", "Application Support", "uitocc");
-const DB_PATH = join(DATA_DIR, "uitocc.db");
+const DATA_DIR = join(homedir(), "Library", "Application Support", "tunr");
+const DB_PATH = join(DATA_DIR, "tunr.db");
 
 await Bun.write(join(DATA_DIR, ".keep"), ""); // ensure dir exists
 
@@ -69,12 +69,12 @@ const insertStmt = db.prepare(
 );
 
 // --- AX text helper ---
-const AX_TEXT_PATH = join(dirname(process.execPath), "uitocc-ax-text");
-const AX_TEXT_FALLBACK = join(import.meta.dir, "uitocc-ax-text");
+const AX_TEXT_PATH = join(dirname(process.execPath), "tunr-ax-text");
+const AX_TEXT_FALLBACK = join(import.meta.dir, "tunr-ax-text");
 const axTextBin = await Bun.file(AX_TEXT_PATH).exists() ? AX_TEXT_PATH : AX_TEXT_FALLBACK;
 
-const EMBED_PATH = join(dirname(process.execPath), "uitocc-embed");
-const EMBED_FALLBACK = join(import.meta.dir, "uitocc-embed");
+const EMBED_PATH = join(dirname(process.execPath), "tunr-embed");
+const EMBED_FALLBACK = join(import.meta.dir, "tunr-embed");
 const embedBin = await Bun.file(EMBED_PATH).exists() ? EMBED_PATH : EMBED_FALLBACK;
 
 function generateEmbedding(text: string): Buffer | null {
@@ -241,8 +241,8 @@ function App() {
   useEffect(() => {
     let active = true;
     const lastTexts = new Map<string, string>(); // windowKey -> last texts JSON for dedup
-    const EVENT_MONITOR_PATH = join(dirname(process.execPath), "uitocc-event-monitor");
-    const EVENT_MONITOR_FALLBACK = join(import.meta.dir, "uitocc-event-monitor");
+    const EVENT_MONITOR_PATH = join(dirname(process.execPath), "tunr-event-monitor");
+    const EVENT_MONITOR_FALLBACK = join(import.meta.dir, "tunr-event-monitor");
     let pendingEventCapture = false;
 
     // Start event monitor (scroll + key detection)
@@ -369,8 +369,8 @@ function App() {
 
   useEffect(() => {
     let active = true;
-    const AUDIO_CAPTURE_PATH = join(dirname(process.execPath), "uitocc-audio-capture");
-    const AUDIO_CAPTURE_FALLBACK = join(import.meta.dir, "uitocc-audio-capture");
+    const AUDIO_CAPTURE_PATH = join(dirname(process.execPath), "tunr-audio-capture");
+    const AUDIO_CAPTURE_FALLBACK = join(import.meta.dir, "tunr-audio-capture");
 
     async function startAudio() {
       const audioBin = await Bun.file(AUDIO_CAPTURE_PATH).exists() ? AUDIO_CAPTURE_PATH : AUDIO_CAPTURE_FALLBACK;
@@ -612,7 +612,7 @@ function App() {
     <Box flexDirection="column" paddingX={1} height={rows}>
       {/* Header */}
       <Box borderStyle="single" borderColor="green" paddingX={1} justifyContent="space-between">
-        <Text color="green" bold> UITOCC CONTROL ROOM </Text>
+        <Text color="green" bold> TUNR CONTROL ROOM </Text>
         <Text color="green">
           {dateStr} {clock}
         </Text>
