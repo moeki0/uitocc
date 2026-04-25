@@ -6,7 +6,7 @@ uitocc captures your macOS screen and system audio, then delivers it to Claude C
 
 ## What it does
 
-- **Screen recording** — Captures visible text, window titles, and screenshots from your macOS windows via the Accessibility API
+- **Screen recording** — Captures visible text and window titles from your macOS windows via the Accessibility API, with web page content from Chrome via AppleScript
 - **Audio recording** — Captures system audio via BlackHole virtual audio device and transcribes it locally with whisper.cpp
 - **TV channel** — Streams screen changes to Claude Code in real-time
 - **RADIO channel** — Streams audio transcriptions to Claude Code in real-time
@@ -24,7 +24,17 @@ brew install moeki0/uitocc/uitocc
 Grant these permissions to your terminal app (System Settings > Privacy & Security):
 
 - **Accessibility** — Required for reading window text
-- **Screen Recording** — Required for capturing screenshots
+
+### Chrome web content (optional)
+
+To capture web page text from Chrome (not just tab titles), enable AppleScript JS execution:
+
+1. Open Chrome
+2. Menu bar: **View** > **Developer** > **Allow JavaScript from Apple Events**
+
+This also works with other Chromium browsers (Edge, Brave, Vivaldi, Opera).
+
+> **Security note:** This setting allows any app with macOS Automation permission to execute JavaScript in your Chrome tabs via AppleScript. macOS TCC requires you to explicitly grant Automation access per-app, so only apps you approve can use this. However, if a malicious app gains Automation permission, it could read page content or manipulate DOM in any tab. If you're concerned, leave this setting off — uitocc will still capture window titles and native app text via the Accessibility API.
 
 ### MCP server setup
 
@@ -84,7 +94,7 @@ This opens a terminal UI with two main sections:
 
 Records your screen and audio to a local SQLite database.
 
-- **SCREEN** — Shows all detected windows. New windows trigger a permission prompt. Allowed windows are periodically recorded (text + screenshots). Content changes are deduplicated automatically.
+- **SCREEN** — Shows all detected windows. New windows trigger a permission prompt. Allowed windows are periodically recorded (text). Content changes are deduplicated automatically.
 - **AUDIO** — Captures system audio in 10-second chunks and transcribes them locally with whisper.cpp. Shows the latest transcription.
 
 #### BROADCAST
@@ -125,7 +135,7 @@ These tools are available to Claude Code when the MCP server is running:
 | Tool | Description |
 |------|-------------|
 | `search_screen_history(query, app?, minutes?, limit?)` | Search screen text by keyword. Filter by app/window name with `app` parameter |
-| `recent_screens(app?, minutes?, limit?)` | Get recent screen states with screenshots |
+| `recent_screens(app?, minutes?, limit?)` | Get recent screen states |
 
 ### Audio tools
 
@@ -160,8 +170,7 @@ uitocc includes a Claude Code plugin that auto-invokes when you reference screen
 │  │  SCREEN                     AUDIO              │ │
 │  │  ├ AX API polling           ├ BlackHole capture│ │
 │  │  ├ Per-window permissions   ├ whisper.cpp      │ │
-│  │  ├ Screenshots              └ Transcriptions   │ │
-│  │  └ Text extraction                             │ │
+│  │  └ AppleScript (Chrome)     └ Transcriptions   │ │
 │  │           │                        │           │ │
 │  │           ▼                        ▼           │ │
 │  │        ┌──────────────────────────────┐        │ │
@@ -194,7 +203,7 @@ uitocc send ──────────────────────�
 | `daemon.tsx` | TUI daemon (Ink/React). Polls windows, manages permissions, records to SQLite, manages audio capture |
 | `mcp-server.ts` | MCP server. Provides search/history tools and channel event polling |
 | `cli.ts` | CLI entry point (`watch`, `mcp`, `send`, `--version`) |
-| `ax_text.swift` | Accessibility API text extractor. `--all` returns all windows as JSON with window IDs |
+| `ax_text.swift` | Accessibility API text extractor. `--all` returns all windows as JSON. Uses AppleScript JS for Chrome web content |
 | `send.swift` | One-shot screen capture. Writes channel event JSON |
 | `embed.swift` | NLEmbedding (macOS NaturalLanguage framework) for 512-dim sentence embeddings used in vector search |
 | `audio_capture.swift` | System audio capture via AVFoundation + BlackHole. Records WAV chunks at 16kHz mono |
@@ -204,7 +213,6 @@ uitocc send ──────────────────────�
 All data is stored locally at `~/Library/Application Support/uitocc/`:
 
 - `uitocc.db` — SQLite database with screen states and audio transcripts
-- `screenshots/` — Window screenshots (auto-cleaned after 24h)
 - `audio/` — Audio WAV chunks (auto-cleaned after 24h)
 
 ## License
