@@ -469,18 +469,60 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
   return { content: [{ type: "text" as const, text: "Unknown tool" }] };
 });
 
-// Simple unified diff between two text arrays
+// Unified diff format
 function makeDiff(oldLines: string[], newLines: string[]): string {
-  const result: string[] = [];
-  const oldSet = new Set(oldLines);
-  const newSet = new Set(newLines);
-  for (const line of oldLines) {
-    if (!newSet.has(line)) result.push(`- ${line}`);
+  const m = oldLines.length, n = newLines.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = oldLines[i - 1] === newLines[j - 1] ? dp[i - 1][j - 1] + 1 : Math.max(dp[i - 1][j], dp[i][j - 1]);
+    }
   }
-  for (const line of newLines) {
-    if (!oldSet.has(line)) result.push(`+ ${line}`);
+  // Backtrack to get edit script
+  const ops: { type: " " | "-" | "+"; text: string }[] = [];
+  let i = m, j = n;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && oldLines[i - 1] === newLines[j - 1]) {
+      ops.push({ type: " ", text: oldLines[i - 1] }); i--; j--;
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      ops.push({ type: "+", text: newLines[j - 1] }); j--;
+    } else {
+      ops.push({ type: "-", text: oldLines[i - 1] }); i--;
+    }
   }
-  return result.join("\n");
+  ops.reverse();
+
+  // Group into hunks (with 3 lines of context)
+  const CTX = 3;
+  const changes = ops.map((o, idx) => ({ ...o, idx })).filter(o => o.type !== " ");
+  if (changes.length === 0) return "";
+
+  const hunks: string[] = [];
+  let hunkStart = 0;
+  while (hunkStart < changes.length) {
+    let hunkEnd = hunkStart;
+    while (hunkEnd + 1 < changes.length && changes[hunkEnd + 1].idx - changes[hunkEnd].idx <= CTX * 2 + 1) {
+      hunkEnd++;
+    }
+    const from = Math.max(0, changes[hunkStart].idx - CTX);
+    const to = Math.min(ops.length, changes[hunkEnd].idx + CTX + 1);
+
+    let oldStart = 1, newStart = 1;
+    for (let k = 0; k < from; k++) {
+      if (ops[k].type !== "+") oldStart++;
+      if (ops[k].type !== "-") newStart++;
+    }
+    let oldCount = 0, newCount = 0;
+    const lines: string[] = [];
+    for (let k = from; k < to; k++) {
+      lines.push(`${ops[k].type}${ops[k].text}`);
+      if (ops[k].type !== "+") oldCount++;
+      if (ops[k].type !== "-") newCount++;
+    }
+    hunks.push(`@@ -${oldStart},${oldCount} +${newStart},${newCount} @@\n${lines.join("\n")}`);
+    hunkStart = hunkEnd + 1;
+  }
+  return hunks.join("\n");
 }
 
 // Poll DB for new screen/audio records and notify subscribed channels
