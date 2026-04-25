@@ -250,12 +250,16 @@ function App() {
 
           const embedding = generateEmbedding(w.texts.join("\n"));
 
-          // Filter by embedding distance
+          // Filter by embedding distance (normalized by text length)
           const prev = lastEmbeddings.get(key);
           if (embedding && prev) {
             const sim = cosineSimilarity(prev, embedding);
             const distance = 1 - sim;
-            if (distance < changeThresholdRef.current) continue;
+            const textLen = w.texts.join("\n").length;
+            const BASE_LEN = 500;
+            const scale = Math.log(Math.max(textLen, 10)) / Math.log(BASE_LEN);
+            const effectiveThreshold = changeThresholdRef.current * scale;
+            if (distance < effectiveThreshold) continue;
           }
           if (embedding) lastEmbeddings.set(key, embedding);
 

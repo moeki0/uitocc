@@ -15,12 +15,9 @@ switch (command) {
   case "mcp":
     await import("./mcp-server.ts");
     break;
-  case "send": {
-    const { join, dirname } = await import("path");
-    const sendPath = join(dirname(process.execPath), "tunr-send");
-    const result = Bun.spawnSync([sendPath], { stdout: "inherit", stderr: "inherit" });
-    process.exit(result.exitCode);
-  }
+  case "send":
+    await import("./send.ts");
+    break;
   case "start":
     await import("./daemon.tsx");
     break;
