@@ -269,7 +269,8 @@ function App() {
           if (!w) continue;
           const uniqueTexts = [...new Set(w.texts)];
           const textsJson = JSON.stringify(uniqueTexts);
-          const fingerprint = `${w.title}\0${textsJson}`;
+          const normalizedTitle = w.title.replace(/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏⠐⠂⠄⠠⠈⠁✳⣾⣽⣻⢿⡿⣟⣯⣷⠀]/g, "").trim();
+          const fingerprint = `${normalizedTitle}\0${textsJson}`;
           const textChanged = lastRecorded.get(key) !== fingerprint;
 
           // Always capture screenshot for pixel diff
