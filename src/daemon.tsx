@@ -27,10 +27,12 @@ function globMatch(pattern: string, value: string): boolean {
 
 function isDenied(denyRules: DenyRule[], app: string, title: string, urls: string[]): boolean {
   return denyRules.some(rule => {
-    if (rule.app && globMatch(rule.app, app)) return true;
-    if (rule.title && globMatch(rule.title, title)) return true;
-    if (rule.url && urls.some(u => globMatch(rule.url!, u))) return true;
-    return false;
+    // All specified fields must match (AND logic)
+    if (rule.app && !globMatch(rule.app, app)) return false;
+    if (rule.title && !globMatch(rule.title, title)) return false;
+    if (rule.url && !urls.some(u => globMatch(rule.url!, u))) return false;
+    // At least one field must be specified
+    return !!(rule.app || rule.title || rule.url);
   });
 }
 
