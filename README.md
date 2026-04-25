@@ -56,22 +56,11 @@ Captures the frontmost app's window title, visible text, and cursor context, the
 
 uitocc includes a Claude Code plugin that auto-invokes when you reference screen content (e.g. "what was I just looking at", "that page I had open"). Install as a plugin to enable this:
 
-First, add the marketplace source to `~/.claude/settings.json`:
+In Claude Code:
 
-```json5
-{
-  "extraKnownMarketplaces": {
-    "uitocc": {
-      "source": { "source": "github", "repo": "moeki0/uitocc" }
-    }
-  }
-}
 ```
-
-Then install:
-
-```bash
-claude plugin install uitocc@uitocc
+/plugin marketplace add moeki0/uitocc
+/plugin install uitocc@uitocc
 ```
 
 ## Architecture
