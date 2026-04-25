@@ -446,6 +446,9 @@ async function pollChannelEvents() {
         const event = JSON.parse(raw);
 
         let textContent = `Screen: **${event.app}** — "${event.windowTitle}"`;
+        if (event.screenshotPath) {
+          textContent += `\nScreenshot: ${event.screenshotPath}`;
+        }
         if (event.texts?.length > 0) {
           textContent += `\n\n${event.texts.join("\n")}`;
         }
