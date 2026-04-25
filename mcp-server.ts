@@ -450,23 +450,10 @@ async function pollChannelEvents() {
           textContent += `\n\n${event.texts.join("\n")}`;
         }
 
-        // Build content with optional screenshot
-        let content: any = textContent;
-        if (event.screenshotPath && existsSync(event.screenshotPath)) {
-          try {
-            const imgBuf = await Bun.file(event.screenshotPath).arrayBuffer();
-            const base64 = Buffer.from(imgBuf).toString("base64");
-            content = [
-              { type: "text", text: textContent },
-              { type: "image", data: base64, mimeType: "image/png" },
-            ];
-          } catch {}
-        }
-
         await mcp.notification({
           method: "notifications/claude/channel",
           params: {
-            content,
+            content: textContent,
             meta: {
               source: "uitocc",
               event: "tv",
