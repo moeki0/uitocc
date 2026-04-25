@@ -176,7 +176,7 @@ These tools are available to Claude Code when the MCP server is running:
 tunr includes a Claude Code plugin that auto-invokes when you reference screen or audio content (e.g. "what was I just looking at", "what did they say in the video").
 
 ```
-/plugin marketplace add moeki0/claude-code-tunr
+/plugin marketplace add moeki0/tunr-skill
 /plugin install tunr@tunr
 ```
 
