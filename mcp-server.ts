@@ -123,6 +123,24 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
+      name: "recent_audio",
+      description:
+        "Get recent audio transcripts from system audio captured by the daemon. Shows what the user has been listening to.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          minutes: {
+            type: "number",
+            description: "How far back to look in minutes (default: 10)",
+          },
+          limit: {
+            type: "number",
+            description: "Max results to return (default: 20)",
+          },
+        },
+      },
+    },
+    {
       name: "search_audio",
       description:
         "Search audio transcripts from system audio captured by the daemon. Useful for finding what was said in videos, meetings, or any audio the user was listening to.",
@@ -239,6 +257,36 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       }
 
       return { content };
+    } finally {
+      db.close();
+    }
+  }
+
+  if (name === "recent_audio") {
+    const db = openDb();
+    if (!db) {
+      return { content: [{ type: "text" as const, text: "No audio history available. Is the watch daemon running?" }] };
+    }
+    try {
+      const minutes = ((args as any)?.minutes as number) || 10;
+      const limit = ((args as any)?.limit as number) || 20;
+      const since = new Date(Date.now() - minutes * 60_000).toISOString();
+
+      const rows = db.prepare(
+        `SELECT timestamp, transcript FROM audio_transcripts
+         WHERE timestamp > ?
+         ORDER BY timestamp DESC LIMIT ?`
+      ).all(since, limit) as any[];
+
+      if (rows.length === 0) {
+        return { content: [{ type: "text" as const, text: `No audio transcripts in the last ${minutes} minutes.` }] };
+      }
+
+      const result = rows.map((r) =>
+        `[${r.timestamp}] ${r.transcript}`
+      ).join("\n\n---\n\n");
+
+      return { content: [{ type: "text" as const, text: result }] };
     } finally {
       db.close();
     }
