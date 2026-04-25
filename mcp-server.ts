@@ -157,7 +157,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 
           const result = scored.map((r) => {
             const texts = JSON.parse(r.texts) as string[];
-            return `[${r.timestamp}] ${r.app} — ${r.window_title} (similarity: ${r.score.toFixed(3)})\n${texts.slice(0, 10).join("\n")}`;
+            return `[${r.timestamp}] ${r.app} — ${r.window_title} (similarity: ${r.score.toFixed(3)})\n${texts.join("\n")}`;
           }).join("\n\n---\n\n");
 
           return { content: [{ type: "text" as const, text: result }] };
@@ -177,7 +177,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 
       const result = rows.map((r) => {
         const texts = JSON.parse(r.texts) as string[];
-        return `[${r.timestamp}] ${r.app} — ${r.window_title}\n${texts.slice(0, 10).join("\n")}`;
+        return `[${r.timestamp}] ${r.app} — ${r.window_title}\n${texts.join("\n")}`;
       }).join("\n\n---\n\n");
 
       return { content: [{ type: "text" as const, text: result }] };
@@ -208,7 +208,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 
       const result = rows.map((r) => {
         const texts = JSON.parse(r.texts) as string[];
-        return `[${r.timestamp}] ${r.app} — ${r.window_title}\n${texts.slice(0, 10).join("\n")}`;
+        return `[${r.timestamp}] ${r.app} — ${r.window_title}\n${texts.join("\n")}`;
       }).join("\n\n---\n\n");
 
       return { content: [{ type: "text" as const, text: result }] };
