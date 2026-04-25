@@ -515,7 +515,7 @@ function makeDiff(oldLines: string[], newLines: string[]): string {
 let lastScreenId = 0;
 let lastAudioId = 0;
 // Track last notified content per window (keyed by "app\0window_title")
-const lastNotified = new Map<string, { title: string; texts: string[] }>();
+const lastNotified = new Map<string, { title: string; lines: string[] }>();
 
 async function pollDb() {
   // Initialize cursors to latest IDs
@@ -554,19 +554,20 @@ async function pollDb() {
         if (matched.length === 0) continue;
 
         const texts = JSON.parse(r.texts) as string[];
+        const lines = texts.join("\n").split("\n");
         const wKey = `${r.pid}:${r.window_index}`;
         const prev = lastNotified.get(wKey);
 
         let content: string;
         if (!prev || prev.title !== r.window_title) {
           // New window or title changed (page navigation) — full text as all-add diff
-          content = `**${r.app}** — "${r.window_title}"\n${texts.map(l => `+ ${l}`).join("\n")}`;
+          content = `**${r.app}** — "${r.window_title}"\n${lines.map(l => `+${l}`).join("\n")}`;
         } else {
           // Same window & title, text changed — diff only
-          const diff = makeDiff(prev.texts, texts);
+          const diff = makeDiff(prev.lines, lines);
           content = `**${r.app}** — "${r.window_title}"\n${diff}`;
         }
-        lastNotified.set(wKey, { title: r.window_title, texts });
+        lastNotified.set(wKey, { title: r.window_title, lines });
 
         for (const ch of matched) {
           await mcp.notification({
