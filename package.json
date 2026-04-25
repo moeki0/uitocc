@@ -1,6 +1,6 @@
 {
   "name": "tunr",
-  "version": "0.9.34",
+  "version": "1.1.0",
   "private": true,
   "scripts": {
     "daemon": "bun daemon.ts",
@@ -9,6 +9,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "ink": "^7.0.1",
+    "ink-text-input": "^6.0.0",
     "react": "^19.2.5",
     "react-devtools-core": "^7.0.1"
   },

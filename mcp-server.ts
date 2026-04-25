@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * tunr MCP server — Provides screen context to Claude Code
+ * tunr MCP server — Provides screen context to Claude Code via channels
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -9,19 +9,16 @@ import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprot
 import { Database } from "bun:sqlite";
 import { homedir } from "os";
 import { join, dirname } from "path";
-import { existsSync, unlinkSync } from "fs";
+import { existsSync, unlinkSync, readdirSync } from "fs";
 
 const DATA_DIR = join(homedir(), "Library", "Application Support", "tunr");
-const CHANNEL_EVENT_PATH = join(DATA_DIR, "channel_event.json");
-const CHANNEL_TV_EVENT_PATH = join(DATA_DIR, "channel_tv_event.json");
-const CHANNEL_RADIO_EVENT_PATH = join(DATA_DIR, "channel_audio_event.json");
-const CHANNEL_STATUS_PATH = join(DATA_DIR, "channel_status.json");
+const CHANNEL_EVENT_PATH = join(DATA_DIR, "channel_event.json"); // user_send events
 const DB_PATH = join(DATA_DIR, "tunr.db");
 
 function openDb(): Database | null {
   try {
     if (!existsSync(DB_PATH)) return null;
-    const db = new Database(DB_PATH, { readonly: true });
+    const db = new Database(DB_PATH, { readonly: false });
     db.run("PRAGMA journal_mode=WAL");
     return db;
   } catch {
@@ -67,17 +64,8 @@ function blobToFloat64Array(blob: Uint8Array | Buffer): Float64Array {
   return arr;
 }
 
-let tvChannelEnabled = false;
-let radioChannelEnabled = false;
-
-async function syncChannelStatus() {
-  try {
-    await Bun.write(CHANNEL_STATUS_PATH, JSON.stringify({ tv: tvChannelEnabled, radio: radioChannelEnabled }));
-  } catch {}
-}
-
 const mcp = new Server(
-  { name: "tunr", version: "0.6.0" },
+  { name: "tunr", version: "1.1.0" },
   {
     capabilities: {
       experimental: { "claude/channel": {} },
@@ -86,8 +74,9 @@ const mcp = new Server(
     instructions: [
       "tunr events arrive as <channel source=\"tunr\" ...>.",
       "event=user_send: User pressed shortcut to share current screen.",
-      "event=tv: Real-time screen content changes (enable with toggle_tv).",
-      "event=radio: Real-time audio transcription (enable with toggle_radio).",
+      "event=screen: Real-time screen content changes for a subscribed channel.",
+      "event=audio: Real-time audio transcription for a subscribed channel.",
+      "Use list_channels to see available channels, then subscribe to receive notifications.",
       "Use the search_screen_history and recent_screens tools to look up what the user has been doing on screen.",
       "Proactively use these tools when the user references something they were looking at, or when screen context would help.",
     ].join(" "),
@@ -96,6 +85,45 @@ const mcp = new Server(
 
 mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
+    {
+      name: "list_channels",
+      description:
+        "List available tunr channels and their subscription status. Channels group windows and optionally audio.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {},
+      },
+    },
+    {
+      name: "subscribe",
+      description:
+        "Subscribe to a tunr channel to receive real-time screen and audio notifications.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          channel: {
+            type: "string",
+            description: "Channel name to subscribe to",
+          },
+        },
+        required: ["channel"],
+      },
+    },
+    {
+      name: "unsubscribe",
+      description:
+        "Unsubscribe from a tunr channel to stop receiving notifications.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          channel: {
+            type: "string",
+            description: "Channel name to unsubscribe from",
+          },
+        },
+        required: ["channel"],
+      },
+    },
     {
       name: "search_screen_history",
       description:
@@ -106,6 +134,10 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
           query: {
             type: "string",
             description: "Text to search for in screen content (app name, window title, or visible text)",
+          },
+          channel: {
+            type: "string",
+            description: "Filter results to a specific channel",
           },
           app: {
             type: "string",
@@ -130,6 +162,10 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
       inputSchema: {
         type: "object" as const,
         properties: {
+          channel: {
+            type: "string",
+            description: "Filter results to a specific channel",
+          },
           app: {
             type: "string",
             description: "Filter by app name or window title (partial match)",
@@ -148,10 +184,14 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "recent_audio",
       description:
-        "Get recent audio transcripts from system audio captured by the daemon. Shows what the user has been listening to.",
+        "Get recent audio transcripts from system audio captured by the daemon.",
       inputSchema: {
         type: "object" as const,
         properties: {
+          channel: {
+            type: "string",
+            description: "Filter results to a specific channel (only channels with audio enabled)",
+          },
           minutes: {
             type: "number",
             description: "How far back to look in minutes (default: 10)",
@@ -166,13 +206,17 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "search_audio",
       description:
-        "Search audio transcripts from system audio captured by the daemon. Useful for finding what was said in videos, meetings, or any audio the user was listening to.",
+        "Search audio transcripts from system audio captured by the daemon.",
       inputSchema: {
         type: "object" as const,
         properties: {
           query: {
             type: "string",
             description: "Search query to find in audio transcripts",
+          },
+          channel: {
+            type: "string",
+            description: "Filter results to a specific channel (only channels with audio enabled)",
           },
           minutes: {
             type: "number",
@@ -186,41 +230,75 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ["query"],
       },
     },
-    {
-      name: "toggle_tv",
-      description:
-        "Enable or disable real-time screen change channel notifications (TV). When enabled, screen content changes are pushed via channel events as they happen.",
-      inputSchema: {
-        type: "object" as const,
-        properties: {
-          enabled: {
-            type: "boolean",
-            description: "true to enable, false to disable TV channel",
-          },
-        },
-        required: ["enabled"],
-      },
-    },
-    {
-      name: "toggle_radio",
-      description:
-        "Enable or disable real-time audio transcript channel notifications (RADIO). When enabled, transcriptions are pushed every ~10 seconds via channel events.",
-      inputSchema: {
-        type: "object" as const,
-        properties: {
-          enabled: {
-            type: "boolean",
-            description: "true to enable, false to disable RADIO channel",
-          },
-        },
-        required: ["enabled"],
-      },
-    },
   ],
 }));
 
 mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
   const { name, arguments: args } = req.params;
+
+  if (name === "list_channels") {
+    const db = openDb();
+    if (!db) {
+      return { content: [{ type: "text" as const, text: "No channels available. Is the watch daemon running?" }] };
+    }
+    try {
+      const channels = db.prepare(
+        `SELECT c.name, c.include_audio,
+                EXISTS(SELECT 1 FROM channel_subscriptions cs WHERE cs.channel_name = c.name) as subscribed,
+                COUNT(cw.id) as window_count
+         FROM channels c
+         LEFT JOIN channel_windows cw ON cw.channel_id = c.id
+         GROUP BY c.id ORDER BY c.id`
+      ).all() as any[];
+
+      if (channels.length === 0) {
+        return { content: [{ type: "text" as const, text: "No channels configured. Create channels in the tunr TUI (tunr watch)." }] };
+      }
+
+      const lines = channels.map((ch) =>
+        `${ch.subscribed ? "●" : "○"} ${ch.name} [${ch.window_count} windows] [audio: ${ch.include_audio ? "on" : "off"}]${ch.subscribed ? " (subscribed)" : ""}`
+      );
+      return { content: [{ type: "text" as const, text: lines.join("\n") }] };
+    } finally {
+      db.close();
+    }
+  }
+
+  if (name === "subscribe") {
+    const channel = (args as any).channel as string;
+    const db = openDb();
+    if (!db) {
+      return { content: [{ type: "text" as const, text: "Database not available. Is the watch daemon running?" }] };
+    }
+    try {
+      const exists = db.prepare(`SELECT 1 FROM channels WHERE name = ?`).get(channel);
+      if (!exists) {
+        const available = db.prepare(`SELECT name FROM channels ORDER BY id`).all() as any[];
+        return { content: [{ type: "text" as const, text: `Channel "${channel}" does not exist. Available: ${available.map(c => c.name).join(", ") || "(none)"}` }] };
+      }
+      db.run(`INSERT OR REPLACE INTO channel_subscriptions (channel_name) VALUES (?)`, channel);
+      return { content: [{ type: "text" as const, text: `Subscribed to channel "${channel}". You will receive screen${db.prepare(`SELECT include_audio FROM channels WHERE name = ?`).get(channel)?.include_audio ? " and audio" : ""} notifications.` }] };
+    } finally {
+      db.close();
+    }
+  }
+
+  if (name === "unsubscribe") {
+    const channel = (args as any).channel as string;
+    const db = openDb();
+    if (!db) {
+      return { content: [{ type: "text" as const, text: "Database not available." }] };
+    }
+    try {
+      db.run(`DELETE FROM channel_subscriptions WHERE channel_name = ?`, channel);
+      // Clean up event files
+      try { unlinkSync(join(DATA_DIR, `channel_event_${channel}.json`)); } catch {}
+      try { unlinkSync(join(DATA_DIR, `channel_audio_${channel}.json`)); } catch {}
+      return { content: [{ type: "text" as const, text: `Unsubscribed from channel "${channel}".` }] };
+    } finally {
+      db.close();
+    }
+  }
 
   if (name === "search_screen_history") {
     const db = openDb();
@@ -229,18 +307,20 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
     }
     try {
       const query = (args as any).query as string;
+      const channelFilter = (args as any).channel as string | undefined;
       const appFilter = (args as any).app as string | undefined;
       const minutes = ((args as any).minutes as number) || 60;
       const limit = ((args as any).limit as number) || 20;
       const since = new Date(Date.now() - minutes * 60_000).toISOString();
       const appClause = appFilter ? ` AND (app LIKE '%${appFilter.replace(/'/g, "''")}%' OR window_title LIKE '%${appFilter.replace(/'/g, "''")}%')` : "";
+      const channelClause = channelFilter ? ` AND channel_names LIKE '%${channelFilter.replace(/'/g, "''")}%'` : "";
 
       // Try vector search first
       const queryVec = queryEmbedding(query);
       if (queryVec) {
         const rows = db.prepare(
-          `SELECT timestamp, app, window_title, texts, embedding FROM screen_states
-           WHERE timestamp > ? AND embedding IS NOT NULL${appClause}
+          `SELECT timestamp, app, window_title, texts, embedding, channel_names FROM screen_states
+           WHERE timestamp > ? AND embedding IS NOT NULL${appClause}${channelClause}
            ORDER BY timestamp DESC LIMIT 200`
         ).all(since) as any[];
 
@@ -253,7 +333,8 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 
           const result = scored.map((r) => {
             const texts = JSON.parse(r.texts) as string[];
-            return `[${r.timestamp}] ${r.app} — ${r.window_title} (similarity: ${r.score.toFixed(3)})\n${texts.join("\n")}`;
+            const ch = r.channel_names ? ` [${r.channel_names}]` : "";
+            return `[${r.timestamp}] ${r.app} — ${r.window_title}${ch} (similarity: ${r.score.toFixed(3)})\n${texts.join("\n")}`;
           }).join("\n\n---\n\n");
 
           return { content: [{ type: "text" as const, text: result }] };
@@ -262,8 +343,8 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 
       // Fallback to LIKE search
       const rows = db.prepare(
-        `SELECT timestamp, app, window_title, texts FROM screen_states
-         WHERE timestamp > ? AND (app LIKE ? OR window_title LIKE ? OR texts LIKE ?)${appClause}
+        `SELECT timestamp, app, window_title, texts, channel_names FROM screen_states
+         WHERE timestamp > ? AND (app LIKE ? OR window_title LIKE ? OR texts LIKE ?)${appClause}${channelClause}
          ORDER BY timestamp DESC LIMIT ?`
       ).all(since, `%${query}%`, `%${query}%`, `%${query}%`, limit) as any[];
 
@@ -273,7 +354,8 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 
       const result = rows.map((r) => {
         const texts = JSON.parse(r.texts) as string[];
-        return `[${r.timestamp}] ${r.app} — ${r.window_title}\n${texts.join("\n")}`;
+        const ch = r.channel_names ? ` [${r.channel_names}]` : "";
+        return `[${r.timestamp}] ${r.app} — ${r.window_title}${ch}\n${texts.join("\n")}`;
       }).join("\n\n---\n\n");
 
       return { content: [{ type: "text" as const, text: result }] };
@@ -288,15 +370,17 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       return { content: [{ type: "text" as const, text: "No screen history available. Is the watch daemon running?" }] };
     }
     try {
+      const channelFilter = (args as any)?.channel as string | undefined;
       const appFilter = (args as any)?.app as string | undefined;
       const minutes = ((args as any)?.minutes as number) || 10;
       const limit = ((args as any)?.limit as number) || 20;
       const since = new Date(Date.now() - minutes * 60_000).toISOString();
       const appClause = appFilter ? ` AND (app LIKE '%${appFilter.replace(/'/g, "''")}%' OR window_title LIKE '%${appFilter.replace(/'/g, "''")}%')` : "";
+      const channelClause = channelFilter ? ` AND channel_names LIKE '%${channelFilter.replace(/'/g, "''")}%'` : "";
 
       const rows = db.prepare(
-        `SELECT timestamp, app, window_title, texts, screenshot_path FROM screen_states
-         WHERE timestamp > ?${appClause}
+        `SELECT timestamp, app, window_title, texts, channel_names FROM screen_states
+         WHERE timestamp > ?${appClause}${channelClause}
          ORDER BY timestamp DESC LIMIT ?`
       ).all(since, limit) as any[];
 
@@ -307,7 +391,8 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       const content: any[] = [];
       for (const r of rows) {
         const texts = JSON.parse(r.texts) as string[];
-        content.push({ type: "text" as const, text: `[${r.timestamp}] ${r.app} — ${r.window_title}\n${texts.join("\n")}` });
+        const ch = r.channel_names ? ` [${r.channel_names}]` : "";
+        content.push({ type: "text" as const, text: `[${r.timestamp}] ${r.app} — ${r.window_title}${ch}\n${texts.join("\n")}` });
       }
 
       return { content };
@@ -377,37 +462,17 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
     }
   }
 
-  if (name === "toggle_tv") {
-    const enabled = (args as any).enabled as boolean;
-    tvChannelEnabled = enabled;
-    await syncChannelStatus();
-    return { content: [{ type: "text" as const, text: `TV channel ${enabled ? "ON" : "OFF"}.` }] };
-  }
-
-  if (name === "toggle_radio") {
-    const enabled = (args as any).enabled as boolean;
-    radioChannelEnabled = enabled;
-    await syncChannelStatus();
-    return { content: [{ type: "text" as const, text: `RADIO channel ${enabled ? "ON" : "OFF"}.` }] };
-  }
-
   return { content: [{ type: "text" as const, text: "Unknown tool" }] };
 });
+
+// Track which channel event files we're watching
+const watchedChannelEvents = new Set<string>();
 
 async function pollChannelEvents() {
   while (true) {
     await Bun.sleep(1000);
 
-    // Sync channel status from TUI
-    if (existsSync(CHANNEL_STATUS_PATH)) {
-      try {
-        const data = JSON.parse(await Bun.file(CHANNEL_STATUS_PATH).text());
-        if (data.tv !== undefined) tvChannelEnabled = data.tv;
-        if (data.radio !== undefined) radioChannelEnabled = data.radio;
-      } catch {}
-    }
-
-    // Check for screen events
+    // Check for user_send events (always active)
     if (existsSync(CHANNEL_EVENT_PATH)) {
       try {
         const raw = await Bun.file(CHANNEL_EVENT_PATH).text();
@@ -435,65 +500,66 @@ async function pollChannelEvents() {
       } catch {}
     }
 
-    // Check for TV events
-    if (tvChannelEnabled && existsSync(CHANNEL_TV_EVENT_PATH)) {
-      try {
-        const raw = await Bun.file(CHANNEL_TV_EVENT_PATH).text();
-        unlinkSync(CHANNEL_TV_EVENT_PATH);
-        const event = JSON.parse(raw);
+    // Check for per-channel screen events
+    try {
+      const files = readdirSync(DATA_DIR).filter(f => f.startsWith("channel_event_") && f.endsWith(".json"));
+      for (const file of files) {
+        const filePath = join(DATA_DIR, file);
+        try {
+          const raw = await Bun.file(filePath).text();
+          unlinkSync(filePath);
+          const event = JSON.parse(raw);
+          const channelName = file.replace("channel_event_", "").replace(".json", "");
 
-        if (event.entries) {
-          const lines = event.entries.map((s: any) => {
-            let line = `**${s.app}** — "${s.windowTitle}"`;
-            if (s.texts?.length) line += `\n${s.texts.join("\n")}`;
-            return line;
-          });
+          if (event.entries) {
+            const lines = event.entries.map((s: any) => {
+              let line = `**${s.app}** — "${s.windowTitle}"`;
+              if (s.texts?.length) line += `\n${s.texts.join("\n")}`;
+              return line;
+            });
+            await mcp.notification({
+              method: "notifications/claude/channel",
+              params: {
+                content: `[${channelName}] Screen update:\n\n${lines.join("\n\n")}`,
+                meta: {
+                  source: "tunr",
+                  event: "screen",
+                  channel: channelName,
+                  timestamp: event.timestamp,
+                },
+              },
+            });
+          }
+        } catch {}
+      }
+    } catch {}
+
+    // Check for per-channel audio events
+    try {
+      const files = readdirSync(DATA_DIR).filter(f => f.startsWith("channel_audio_") && f.endsWith(".json"));
+      for (const file of files) {
+        const filePath = join(DATA_DIR, file);
+        try {
+          const raw = await Bun.file(filePath).text();
+          unlinkSync(filePath);
+          const event = JSON.parse(raw);
+          const channelName = file.replace("channel_audio_", "").replace(".json", "");
+
           await mcp.notification({
             method: "notifications/claude/channel",
             params: {
-              content: `Screen update:\n\n${lines.join("\n\n")}`,
+              content: `[${channelName}] Audio transcript:\n${event.transcript}`,
               meta: {
                 source: "tunr",
-                event: "tv",
+                event: "audio",
+                channel: channelName,
                 timestamp: event.timestamp,
               },
             },
           });
-        } else {
-          // Legacy single-window format
-          let textContent = `Screen: **${event.app}** — "${event.windowTitle}"`;
-          if (event.screenshotPath) textContent += `\nScreenshot: ${event.screenshotPath}`;
-          await mcp.notification({
-            method: "notifications/claude/channel",
-            params: {
-              content: textContent,
-              meta: { source: "tunr", event: "tv", app: event.app, windowTitle: event.windowTitle },
-            },
-          });
-        }
-      } catch {}
-    }
-
-    // Check for RADIO events
-    if (radioChannelEnabled && existsSync(CHANNEL_RADIO_EVENT_PATH)) {
-      try {
-        const raw = await Bun.file(CHANNEL_RADIO_EVENT_PATH).text();
-        unlinkSync(CHANNEL_RADIO_EVENT_PATH);
-        const event = JSON.parse(raw);
-
-        await mcp.notification({
-          method: "notifications/claude/channel",
-          params: {
-            content: `Audio transcript:\n${event.transcript}`,
-            meta: {
-              source: "tunr",
-              event: "radio",
-              timestamp: event.timestamp,
-            },
-          },
-        });
-      } catch {}
-    }
+        } catch {}
+      }
+    } catch {}
   }
 }
 

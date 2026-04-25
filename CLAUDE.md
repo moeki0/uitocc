@@ -13,23 +13,35 @@ bun daemon.tsx    # start watch daemon with TUI
 
 ## Architecture
 
-- **daemon.tsx**: TUI daemon (Ink/React) — polls all windows via ax_text, asks per-window permission, records allowed windows to SQLite
-- **mcp-server.ts**: MCP server with search_screen_history / recent_screens tools, plus channel notifications for user_send
+- **daemon.tsx**: TUI daemon (Ink/React) — polls all windows, channel-based window grouping, records to SQLite
+- **mcp-server.ts**: MCP server with subscribe/unsubscribe/list_channels + search tools, per-channel event polling
 - **send.swift**: One-shot shortcut script, writes channel_event.json
-- **ax_text.swift**: AX API text extractor (`--all` for all windows as JSON)
+- **ax_text.swift**: AX API text extractor (`--all` for all windows as JSON), AppleScript JS for Chrome web content
 - **embed.swift**: NLEmbedding (macOS NaturalLanguage) で512次元センテンス埋め込みを生成
+
+## Channels
+
+TUIでチャンネルを作成し、ウィンドウを割り当てる。Claude Codeは `subscribe(channel)` で購読。
+
+- チャンネルにはウィンドウ群と音声(オプション)が含まれる
+- 1つのウィンドウが複数チャンネルに所属可能
+- 購読中のチャンネルのみイベント通知が発生
 
 ## MCP Tools
 
-- `search_screen_history(query, minutes?, limit?)` — search observed screen text (vector similarity via NLEmbedding, LIKE fallback)
-- `recent_screens(minutes?, limit?)` — recent screen states
-- `recent_audio(minutes?, limit?)` — recent audio transcripts
-- `search_audio(query, minutes?, limit?)` — search audio transcripts
+- `list_channels()` — available channels + subscription status
+- `subscribe(channel)` — subscribe to channel notifications
+- `unsubscribe(channel)` — stop receiving from channel
+- `search_screen_history(query, channel?, app?, minutes?, limit?)` — search observed screen text (vector similarity via NLEmbedding, LIKE fallback)
+- `recent_screens(channel?, app?, minutes?, limit?)` — recent screen states
+- `recent_audio(channel?, minutes?, limit?)` — recent audio transcripts
+- `search_audio(query, channel?, minutes?, limit?)` — search audio transcripts
 
-## MCP Channels
+## MCP Channel Events
 
 - `user_send` — user pressed shortcut to share current screen
-- `audio_transcript` — real-time audio transcription (every 10s)
+- `screen` — real-time screen content changes (subscribed channels)
+- `audio` — real-time audio transcription (subscribed channels with audio enabled)
 
 When the user references something they were looking at or listening to, or screen/audio context would help understand their request, proactively use these tools.
 
