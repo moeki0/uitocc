@@ -11,7 +11,11 @@ const AX_TEXT_PATH = join(dirname(process.execPath), "tunr-ax-text");
 const AX_TEXT_FALLBACK = join(import.meta.dir, "..", "tunr-ax-text");
 const axTextBin = await Bun.file(AX_TEXT_PATH).exists() ? AX_TEXT_PATH : AX_TEXT_FALLBACK;
 
-// Get focused window info
+// Get frontmost app PID
+const frontProc = Bun.spawnSync(["osascript", "-e", 'tell application "System Events" to unix id of first process whose frontmost is true'], { stdout: "pipe", stderr: "pipe" });
+const frontPid = parseInt(frontProc.stdout.toString().trim());
+
+// Get all windows
 const proc = Bun.spawnSync([axTextBin, "--all"], { stderr: "pipe" });
 if (proc.exitCode !== 0) {
   console.error("Failed to get window text");
@@ -24,8 +28,8 @@ if (!windows || windows.length === 0) {
   process.exit(1);
 }
 
-// Use first window (frontmost)
-const w = windows[0];
+// Find frontmost app's first window
+const w = windows.find((w: any) => w.pid === frontPid) || windows[0];
 if (!w.texts || w.texts.length === 0) {
   console.error("No text in focused window");
   process.exit(1);
