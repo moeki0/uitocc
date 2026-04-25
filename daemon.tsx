@@ -261,7 +261,16 @@ function App() {
   }, []);
 
   // Audio capture & transcription
-  const [audioStatus, setAudioStatus] = useState<string>("off");
+  const [audioEnabled, setAudioEnabled] = useState(true);
+  const audioEnabledRef = useRef(true);
+  const [audioStatus, setAudioStatus] = useState<string>("starting");
+  const [lastTranscript, setLastTranscript] = useState<string>("");
+  const audioProcRef = useRef<any>(null);
+
+  useEffect(() => {
+    audioEnabledRef.current = audioEnabled;
+  }, [audioEnabled]);
+
   useEffect(() => {
     let active = true;
     const AUDIO_CAPTURE_PATH = join(dirname(process.execPath), "uitocc-audio-capture");
@@ -274,47 +283,56 @@ function App() {
         return;
       }
 
-      setAudioStatus("recording");
-      const proc = Bun.spawn([audioBin, AUDIO_DIR, "30"], {
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-
-      // Read completed chunks from stdout and transcribe
-      const reader = proc.stdout.getReader();
-      const decoder = new TextDecoder();
-      let buf = "";
-
       while (active) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const lines = buf.split("\n");
-        buf = lines.pop() || "";
-
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const chunk = JSON.parse(line);
-            // Transcribe with whisper.cpp
-            const modelPath = join(homedir(), ".cache", "whisper-cpp-small.bin");
-            const wp = Bun.spawnSync([
-              "whisper-cli",
-              "-m", modelPath,
-              "-l", "ja",
-              "-f", chunk.file,
-              "-np",      // no prints (progress)
-              "-nt",      // no timestamps
-            ], { stdout: "pipe", stderr: "pipe" });
-            const transcript = wp.stdout.toString().trim();
-            if (transcript) {
-              insertAudioStmt.run(chunk.timestamp, chunk.file, transcript);
-            }
-          } catch {}
+        if (!audioEnabledRef.current) {
+          setAudioStatus("off");
+          await Bun.sleep(1000);
+          continue;
         }
-      }
 
-      proc.kill();
+        setAudioStatus("recording");
+        const proc = Bun.spawn([audioBin, AUDIO_DIR, "30"], {
+          stdout: "pipe",
+          stderr: "pipe",
+        });
+        audioProcRef.current = proc;
+
+        const reader = proc.stdout.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+
+        while (active && audioEnabledRef.current) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split("\n");
+          buf = lines.pop() || "";
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const chunk = JSON.parse(line);
+              const modelPath = join(homedir(), ".cache", "whisper-cpp-small.bin");
+              const wp = Bun.spawnSync([
+                "whisper-cli",
+                "-m", modelPath,
+                "-l", "ja",
+                "-f", chunk.file,
+                "-np",
+                "-nt",
+              ], { stdout: "pipe", stderr: "pipe" });
+              const transcript = wp.stdout.toString().trim();
+              if (transcript) {
+                insertAudioStmt.run(chunk.timestamp, chunk.file, transcript);
+                setLastTranscript(transcript.slice(0, 80));
+              }
+            } catch {}
+          }
+        }
+
+        proc.kill();
+        audioProcRef.current = null;
+      }
     }
 
     startAudio();
@@ -338,35 +356,71 @@ function App() {
     return () => { active = false; };
   }, []);
 
+  // Selected window index for re-configuring
+  const [selectedIndex, setSelectedIndex] = useState(-1);
+
   // Handle input
   useInput((input, key) => {
     if (input === "q" || (key.ctrl && input === "c")) {
+      if (audioProcRef.current) audioProcRef.current.kill();
       db.close();
       exit();
       return;
     }
 
-    if (!pendingKey) return;
+    // Toggle audio
+    if (input === "a" || input === "A") {
+      setAudioEnabled((prev) => !prev);
+      return;
+    }
 
-    if (input === "y" || input === "Y") {
-      setWindows((prev) => {
-        const next = new Map(prev);
-        const w = next.get(pendingKey);
-        if (w) next.set(pendingKey, { ...w, permission: "allowed" });
-        return next;
-      });
-    } else if (input === "n" || input === "N") {
-      setWindows((prev) => {
-        const next = new Map(prev);
-        const w = next.get(pendingKey);
-        if (w) next.set(pendingKey, { ...w, permission: "denied" });
-        return next;
-      });
+    // Pending window prompt
+    if (pendingKey) {
+      if (input === "y" || input === "Y") {
+        setWindows((prev) => {
+          const next = new Map(prev);
+          const w = next.get(pendingKey);
+          if (w) next.set(pendingKey, { ...w, permission: "allowed" });
+          return next;
+        });
+      } else if (input === "n" || input === "N") {
+        setWindows((prev) => {
+          const next = new Map(prev);
+          const w = next.get(pendingKey);
+          if (w) next.set(pendingKey, { ...w, permission: "denied" });
+          return next;
+        });
+      }
+      return;
+    }
+
+    // Navigate window list
+    const allWindows = [...windows.values()].filter((w) => w.permission !== "pending");
+    if (key.upArrow) {
+      setSelectedIndex((prev) => Math.max(0, prev - 1));
+    } else if (key.downArrow) {
+      setSelectedIndex((prev) => Math.min(allWindows.length - 1, prev + 1));
+    } else if (input === "t" || input === "T") {
+      // Toggle permission of selected window
+      if (selectedIndex >= 0 && selectedIndex < allWindows.length) {
+        const target = allWindows[selectedIndex];
+        const key = windowKey(target);
+        setWindows((prev) => {
+          const next = new Map(prev);
+          const w = next.get(key);
+          if (w) {
+            const newPerm = w.permission === "allowed" ? "denied" : "allowed";
+            next.set(key, { ...w, permission: newPerm });
+          }
+          return next;
+        });
+      }
     }
   });
 
   const allowed = [...windows.values()].filter((w) => w.permission === "allowed");
   const denied = [...windows.values()].filter((w) => w.permission === "denied");
+  const configured = [...windows.values()].filter((w) => w.permission !== "pending");
   const pending = [...windows.values()].filter((w) => w.permission === "pending");
   const pendingWindow = pendingKey ? windows.get(pendingKey) : null;
 
@@ -378,34 +432,33 @@ function App() {
         </Text>
         <Text color="gray">
           {" "}
-          — {allowed.length} watching, {denied.length} denied, {recordCount} recorded, audio: {audioStatus}
+          — {allowed.length} watching, {recordCount} recorded
+        </Text>
+        <Text color={audioEnabled ? "green" : "gray"}>
+          {" "}| audio: {audioEnabled ? audioStatus : "off"}
         </Text>
       </Box>
 
-      {allowed.length > 0 && (
+      {configured.length > 0 && (
         <Box flexDirection="column" marginBottom={1}>
-          {allowed.map((w) => (
-            <Box key={windowKey(w)}>
-              <Text color="green"> ✓ </Text>
-              <Text bold>{w.app}</Text>
-              <Text color="gray"> — {w.title || "(untitled)"}</Text>
-            </Box>
-          ))}
-        </Box>
-      )}
-
-      {denied.length > 0 && (
-        <Box flexDirection="column" marginBottom={1}>
-          {denied.map((w) => (
-            <Box key={windowKey(w)}>
-              <Text color="red"> ✗ </Text>
-              <Text dimColor>{w.app}</Text>
-              <Text color="gray" dimColor>
-                {" "}
-                — {w.title || "(untitled)"}
-              </Text>
-            </Box>
-          ))}
+          {configured.map((w, i) => {
+            const isSelected = !pendingKey && i === selectedIndex;
+            const isAllowed = w.permission === "allowed";
+            return (
+              <Box key={windowKey(w)}>
+                <Text color={isSelected ? "cyan" : undefined}>
+                  {isSelected ? "▸" : " "}
+                </Text>
+                <Text color={isAllowed ? "green" : "red"}>
+                  {isAllowed ? " ✓ " : " ✗ "}
+                </Text>
+                <Text bold={isAllowed} dimColor={!isAllowed}>{w.app}</Text>
+                <Text color="gray" dimColor={!isAllowed}>
+                  {" "}— {w.title || "(untitled)"}
+                </Text>
+              </Box>
+            );
+          })}
         </Box>
       )}
 
@@ -427,13 +480,19 @@ function App() {
             </Text>
           </Box>
         </Box>
-      ) : pending.length === 0 ? (
-        <Box>
-          <Text color="gray" dimColor>
-            Watching for new windows... (q to quit)
-          </Text>
-        </Box>
       ) : null}
+
+      {lastTranscript && audioEnabled && (
+        <Box marginTop={1}>
+          <Text color="gray">🎙 {lastTranscript}</Text>
+        </Box>
+      )}
+
+      <Box marginTop={1}>
+        <Text dimColor>
+          ↑↓ select  t toggle  a audio {audioEnabled ? "off" : "on"}  q quit
+        </Text>
+      </Box>
     </Box>
   );
 }
