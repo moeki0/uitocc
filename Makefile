@@ -16,13 +16,11 @@ install: all
 	install -m 755 uitocc $(PREFIX)/bin/uitocc
 	install -m 755 uitocc-ax-text $(PREFIX)/bin/uitocc-ax-text
 	install -m 755 uitocc-send $(PREFIX)/bin/uitocc-send
-	install -m 755 transcribe.sh $(PREFIX)/bin/uitocc-transcribe.sh
 
 uninstall:
 	rm -f $(PREFIX)/bin/uitocc
 	rm -f $(PREFIX)/bin/uitocc-ax-text
 	rm -f $(PREFIX)/bin/uitocc-send
-	rm -f $(PREFIX)/bin/uitocc-transcribe.sh
 
 clean:
 	rm -f uitocc uitocc-ax-text uitocc-send
