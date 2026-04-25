@@ -5,13 +5,7 @@ Screen context provider for [Claude Code](https://docs.anthropic.com/en/docs/cla
 ## Install
 
 ```bash
-brew install moeki0/tap/uitocc
-```
-
-Or install directly:
-
-```bash
-curl -sL https://github.com/moeki0/uitocc/releases/download/v0.9.3/uitocc-darwin-arm64.tar.gz | tar xz -C /usr/local/bin/
+brew install moeki0/uitocc/uitocc
 ```
 
 Grant Accessibility and Screen Recording permissions to your terminal app.
