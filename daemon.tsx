@@ -177,9 +177,10 @@ function App() {
     setPendingKey(null);
   }, [windows, pendingKey]);
 
-  // Record allowed windows periodically
+  // Record allowed windows periodically (with dedup)
   useEffect(() => {
     let active = true;
+    const lastRecorded = new Map<string, string>(); // windowKey -> title + texts hash
     async function record() {
       while (active) {
         await Bun.sleep(RECORD_MS);
@@ -198,9 +199,14 @@ function App() {
           const key = windowKey(tw);
           const w = foundMap.get(key);
           if (!w) continue;
+          const uniqueTexts = [...new Set(w.texts)];
+          const textsJson = JSON.stringify(uniqueTexts);
+          const fingerprint = `${w.title}\0${textsJson}`;
+          if (lastRecorded.get(key) === fingerprint) continue;
+          lastRecorded.set(key, fingerprint);
           const textForEmbed = `${w.app} ${w.title} ${w.texts.slice(0, 10).join(" ")}`.slice(0, 1000);
           const emb = generateEmbedding(textForEmbed);
-          insertStmt.run(ts, w.pid, w.window_index, w.app, w.title, JSON.stringify(w.texts), emb);
+          insertStmt.run(ts, w.pid, w.window_index, w.app, w.title, textsJson, emb);
           setRecordCount((c) => c + 1);
         }
       }
