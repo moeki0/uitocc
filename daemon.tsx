@@ -245,11 +245,11 @@ function App() {
     const lastScreenshot = new Map<string, string>(); // windowKey -> last screenshot path
     const IMAGE_DIFF_PATH = join(dirname(process.execPath), "uitocc-image-diff");
     const IMAGE_DIFF_FALLBACK = join(import.meta.dir, "uitocc-image-diff");
-    const imageDiffBin = await Bun.file(IMAGE_DIFF_PATH).exists() ? IMAGE_DIFF_PATH : IMAGE_DIFF_FALLBACK;
-    const hasImageDiff = await Bun.file(imageDiffBin).exists();
     const DIFF_THRESHOLD = 0.01; // 1% pixel change = significant
 
     async function record() {
+      const imageDiffBin = await Bun.file(IMAGE_DIFF_PATH).exists() ? IMAGE_DIFF_PATH : IMAGE_DIFF_FALLBACK;
+      const hasImageDiff = await Bun.file(imageDiffBin).exists();
       while (active) {
         await Bun.sleep(RECORD_MS);
         const allowedWindows: TrackedWindow[] = [];
