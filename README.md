@@ -8,6 +8,12 @@ Screen context provider for [Claude Code](https://docs.anthropic.com/en/docs/cla
 brew install moeki0/tap/uitocc
 ```
 
+Or install directly:
+
+```bash
+curl -sL https://github.com/moeki0/uitocc/releases/download/v0.9.2/uitocc-darwin-arm64.tar.gz | tar xz -C /usr/local/bin/
+```
+
 Grant Accessibility and Screen Recording permissions to your terminal app.
 
 Register the MCP server:
