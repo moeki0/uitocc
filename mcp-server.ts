@@ -96,6 +96,10 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
             type: "string",
             description: "Text to search for in screen content (app name, window title, or visible text)",
           },
+          app: {
+            type: "string",
+            description: "Filter by app name or window title (partial match)",
+          },
           minutes: {
             type: "number",
             description: "Only search within the last N minutes (default: 60)",
@@ -115,6 +119,10 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
       inputSchema: {
         type: "object" as const,
         properties: {
+          app: {
+            type: "string",
+            description: "Filter by app name or window title (partial match)",
+          },
           minutes: {
             type: "number",
             description: "How far back to look in minutes (default: 10)",
@@ -195,16 +203,18 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
     }
     try {
       const query = (args as any).query as string;
+      const appFilter = (args as any).app as string | undefined;
       const minutes = ((args as any).minutes as number) || 60;
       const limit = ((args as any).limit as number) || 20;
       const since = new Date(Date.now() - minutes * 60_000).toISOString();
+      const appClause = appFilter ? ` AND (app LIKE '%${appFilter.replace(/'/g, "''")}%' OR window_title LIKE '%${appFilter.replace(/'/g, "''")}%')` : "";
 
       // Try vector search first
       const queryVec = queryEmbedding(query);
       if (queryVec) {
         const rows = db.prepare(
           `SELECT timestamp, app, window_title, texts, embedding FROM screen_states
-           WHERE timestamp > ? AND embedding IS NOT NULL
+           WHERE timestamp > ? AND embedding IS NOT NULL${appClause}
            ORDER BY timestamp DESC LIMIT 200`
         ).all(since) as any[];
 
@@ -227,7 +237,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       // Fallback to LIKE search
       const rows = db.prepare(
         `SELECT timestamp, app, window_title, texts FROM screen_states
-         WHERE timestamp > ? AND (app LIKE ? OR window_title LIKE ? OR texts LIKE ?)
+         WHERE timestamp > ? AND (app LIKE ? OR window_title LIKE ? OR texts LIKE ?)${appClause}
          ORDER BY timestamp DESC LIMIT ?`
       ).all(since, `%${query}%`, `%${query}%`, `%${query}%`, limit) as any[];
 
@@ -252,13 +262,15 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       return { content: [{ type: "text" as const, text: "No screen history available. Is the watch daemon running?" }] };
     }
     try {
+      const appFilter = (args as any)?.app as string | undefined;
       const minutes = ((args as any)?.minutes as number) || 10;
       const limit = ((args as any)?.limit as number) || 20;
       const since = new Date(Date.now() - minutes * 60_000).toISOString();
+      const appClause = appFilter ? ` AND (app LIKE '%${appFilter.replace(/'/g, "''")}%' OR window_title LIKE '%${appFilter.replace(/'/g, "''")}%')` : "";
 
       const rows = db.prepare(
         `SELECT timestamp, app, window_title, texts, screenshot_path FROM screen_states
-         WHERE timestamp > ?
+         WHERE timestamp > ?${appClause}
          ORDER BY timestamp DESC LIMIT ?`
       ).all(since, limit) as any[];
 
