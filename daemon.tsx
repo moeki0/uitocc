@@ -221,6 +221,13 @@ function App() {
   useEffect(() => {
     let active = true;
     const lastRecorded = new Map<string, string>(); // windowKey -> title + texts hash
+    const lastScreenshot = new Map<string, string>(); // windowKey -> last screenshot path
+    const IMAGE_DIFF_PATH = join(dirname(process.execPath), "uitocc-image-diff");
+    const IMAGE_DIFF_FALLBACK = join(import.meta.dir, "uitocc-image-diff");
+    const imageDiffBin = await Bun.file(IMAGE_DIFF_PATH).exists() ? IMAGE_DIFF_PATH : IMAGE_DIFF_FALLBACK;
+    const hasImageDiff = await Bun.file(imageDiffBin).exists();
+    const DIFF_THRESHOLD = 0.01; // 1% pixel change = significant
+
     async function record() {
       while (active) {
         await Bun.sleep(RECORD_MS);
@@ -242,16 +249,39 @@ function App() {
           const uniqueTexts = [...new Set(w.texts)];
           const textsJson = JSON.stringify(uniqueTexts);
           const fingerprint = `${w.title}\0${textsJson}`;
-          if (lastRecorded.get(key) === fingerprint) continue;
-          lastRecorded.set(key, fingerprint);
-          // Capture screenshot
+          const textChanged = lastRecorded.get(key) !== fingerprint;
+
+          // Always capture screenshot for pixel diff
           let screenshotPath: string | null = null;
+          let visuallyChanged = false;
           if (w.window_id) {
             const filename = `${ts.replace(/[:.]/g, "-")}_${w.pid}_${w.window_index}.png`;
             const filepath = join(SCREENSHOTS_DIR, filename);
             const sc = Bun.spawnSync(["/usr/sbin/screencapture", `-l${w.window_id}`, "-x", filepath]);
-            if (sc.exitCode === 0) screenshotPath = filepath;
+            if (sc.exitCode === 0) {
+              // Compare with previous screenshot
+              const prevPath = lastScreenshot.get(key);
+              if (!prevPath || !hasImageDiff) {
+                visuallyChanged = true;
+              } else {
+                const diff = Bun.spawnSync([imageDiffBin, prevPath, filepath], { stdout: "pipe" });
+                const ratio = parseFloat(diff.stdout.toString().trim());
+                visuallyChanged = isNaN(ratio) || ratio > DIFF_THRESHOLD;
+              }
+
+              if (textChanged || visuallyChanged) {
+                screenshotPath = filepath;
+                lastScreenshot.set(key, filepath);
+              } else {
+                // No change — delete temp screenshot
+                try { unlinkSync(filepath); } catch {}
+              }
+            }
           }
+
+          if (!textChanged && !visuallyChanged) continue;
+          lastRecorded.set(key, fingerprint);
+
           const textForEmbed = `${w.app} ${w.title} ${w.texts.slice(0, 10).join(" ")}`.slice(0, 1000);
           const emb = generateEmbedding(textForEmbed);
           insertStmt.run(ts, w.pid, w.window_index, w.app, w.title, textsJson, emb, screenshotPath);
