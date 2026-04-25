@@ -122,6 +122,29 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
       },
     },
+    {
+      name: "search_audio",
+      description:
+        "Search audio transcripts from system audio captured by the daemon. Useful for finding what was said in videos, meetings, or any audio the user was listening to.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          query: {
+            type: "string",
+            description: "Search query to find in audio transcripts",
+          },
+          minutes: {
+            type: "number",
+            description: "Only search within the last N minutes (default: 60)",
+          },
+          limit: {
+            type: "number",
+            description: "Max results to return (default: 20)",
+          },
+        },
+        required: ["query"],
+      },
+    },
   ],
 }));
 
@@ -216,6 +239,37 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       }
 
       return { content };
+    } finally {
+      db.close();
+    }
+  }
+
+  if (name === "search_audio") {
+    const db = openDb();
+    if (!db) {
+      return { content: [{ type: "text" as const, text: "No audio history available. Is the watch daemon running?" }] };
+    }
+    try {
+      const query = (args as any).query as string;
+      const minutes = ((args as any).minutes as number) || 60;
+      const limit = ((args as any).limit as number) || 20;
+      const since = new Date(Date.now() - minutes * 60_000).toISOString();
+
+      const rows = db.prepare(
+        `SELECT timestamp, transcript FROM audio_transcripts
+         WHERE timestamp > ? AND transcript LIKE ?
+         ORDER BY timestamp DESC LIMIT ?`
+      ).all(since, `%${query}%`, limit) as any[];
+
+      if (rows.length === 0) {
+        return { content: [{ type: "text" as const, text: `No audio transcripts matching "${query}" in the last ${minutes} minutes.` }] };
+      }
+
+      const result = rows.map((r) =>
+        `[${r.timestamp}] ${r.transcript}`
+      ).join("\n\n---\n\n");
+
+      return { content: [{ type: "text" as const, text: result }] };
     } finally {
       db.close();
     }

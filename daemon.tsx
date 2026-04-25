@@ -39,6 +39,22 @@ try { db.run(`ALTER TABLE screen_states ADD COLUMN screenshot_path TEXT`); } cat
 const SCREENSHOTS_DIR = join(DATA_DIR, "screenshots");
 await Bun.write(join(SCREENSHOTS_DIR, ".keep"), "");
 
+const AUDIO_DIR = join(DATA_DIR, "audio");
+await Bun.write(join(AUDIO_DIR, ".keep"), "");
+
+db.run(`CREATE TABLE IF NOT EXISTS audio_transcripts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  timestamp TEXT NOT NULL,
+  audio_path TEXT NOT NULL,
+  transcript TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+)`);
+db.run(`CREATE INDEX IF NOT EXISTS idx_audio_timestamp ON audio_transcripts(timestamp)`);
+
+const insertAudioStmt = db.prepare(
+  `INSERT INTO audio_transcripts (timestamp, audio_path, transcript) VALUES (?, ?, ?)`
+);
+
 const insertStmt = db.prepare(
   `INSERT INTO screen_states (timestamp, pid, window_index, app, window_title, texts, embedding, screenshot_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 );
@@ -244,6 +260,84 @@ function App() {
     return () => { active = false; };
   }, []);
 
+  // Audio capture & transcription
+  const [audioStatus, setAudioStatus] = useState<string>("off");
+  useEffect(() => {
+    let active = true;
+    const AUDIO_CAPTURE_PATH = join(dirname(process.execPath), "uitocc-audio-capture");
+    const AUDIO_CAPTURE_FALLBACK = join(import.meta.dir, "uitocc-audio-capture");
+
+    async function startAudio() {
+      const audioBin = await Bun.file(AUDIO_CAPTURE_PATH).exists() ? AUDIO_CAPTURE_PATH : AUDIO_CAPTURE_FALLBACK;
+      if (!await Bun.file(audioBin).exists()) {
+        setAudioStatus("no binary");
+        return;
+      }
+
+      setAudioStatus("recording");
+      const proc = Bun.spawn([audioBin, AUDIO_DIR, "30"], {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+
+      // Read completed chunks from stdout and transcribe
+      const reader = proc.stdout.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+
+      while (active) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const chunk = JSON.parse(line);
+            // Transcribe with whisper.cpp
+            const modelPath = join(homedir(), ".cache", "whisper-cpp-small.bin");
+            const wp = Bun.spawnSync([
+              "whisper-cli",
+              "-m", modelPath,
+              "-l", "ja",
+              "-f", chunk.file,
+              "-np",      // no prints (progress)
+              "-nt",      // no timestamps
+            ], { stdout: "pipe", stderr: "pipe" });
+            const transcript = wp.stdout.toString().trim();
+            if (transcript) {
+              insertAudioStmt.run(chunk.timestamp, chunk.file, transcript);
+            }
+          } catch {}
+        }
+      }
+
+      proc.kill();
+    }
+
+    startAudio();
+
+    // Cleanup old audio (>24h)
+    async function cleanupAudio() {
+      while (active) {
+        await Bun.sleep(600_000);
+        const cutoff = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
+        const old = db.prepare(
+          `SELECT id, audio_path FROM audio_transcripts WHERE timestamp < ?`
+        ).all(cutoff) as any[];
+        for (const row of old) {
+          try { unlinkSync(row.audio_path); } catch {}
+        }
+        db.run(`DELETE FROM audio_transcripts WHERE timestamp < ?`, cutoff);
+      }
+    }
+    cleanupAudio();
+
+    return () => { active = false; };
+  }, []);
+
   // Handle input
   useInput((input, key) => {
     if (input === "q" || (key.ctrl && input === "c")) {
@@ -284,7 +378,7 @@ function App() {
         </Text>
         <Text color="gray">
           {" "}
-          — {allowed.length} watching, {denied.length} denied, {recordCount} recorded
+          — {allowed.length} watching, {denied.length} denied, {recordCount} recorded, audio: {audioStatus}
         </Text>
       </Box>
 
