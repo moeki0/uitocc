@@ -17,6 +17,16 @@ const DB_PATH = join(DATA_DIR, "uitocc.db");
 
 await Bun.write(join(DATA_DIR, ".keep"), ""); // ensure dir exists
 
+// --- Settings ---
+const SETTINGS_PATH = join(DATA_DIR, "settings.json");
+let _savedSettings: any = {};
+try {
+  if (await Bun.file(SETTINGS_PATH).exists()) {
+    _savedSettings = JSON.parse(await Bun.file(SETTINGS_PATH).text());
+  }
+} catch {}
+const savedAudioChunkSec = typeof _savedSettings.audioChunkSec === "number" ? _savedSettings.audioChunkSec : 10;
+
 const db = new Database(DB_PATH);
 db.run("PRAGMA journal_mode=WAL");
 db.run(`CREATE TABLE IF NOT EXISTS screen_states (
@@ -285,7 +295,9 @@ function App() {
   const [tvChannelActive, setTvChannelActive] = useState(false);
   const [radioChannelActive, setRadioChannelActive] = useState(false);
   const tvChannelRef = useRef(false);
+  const radioChannelRef = useRef(false);
   useEffect(() => { tvChannelRef.current = tvChannelActive; }, [tvChannelActive]);
+  useEffect(() => { radioChannelRef.current = radioChannelActive; }, [radioChannelActive]);
   useEffect(() => {
     const statusPath = join(DATA_DIR, "channel_status.json");
     const tid = setInterval(async () => {
@@ -306,8 +318,8 @@ function App() {
   const audioEnabledRef = useRef(true);
   const [audioStatus, setAudioStatus] = useState<string>("starting");
   const [lastTranscript, setLastTranscript] = useState<string>("");
-  const [audioChunkSec, setAudioChunkSec] = useState(10);
-  const audioChunkRef = useRef(10);
+  const [audioChunkSec, setAudioChunkSec] = useState(savedAudioChunkSec);
+  const audioChunkRef = useRef(savedAudioChunkSec);
   const audioProcRef = useRef<any>(null);
 
   useEffect(() => {
@@ -315,6 +327,7 @@ function App() {
   }, [audioEnabled]);
   useEffect(() => {
     audioChunkRef.current = audioChunkSec;
+    Bun.write(SETTINGS_PATH, JSON.stringify({ audioChunkSec }));
   }, [audioChunkSec]);
 
   useEffect(() => {
@@ -387,13 +400,13 @@ function App() {
                 setLastTranscript(transcript.slice(0, 80));
                 const time = chunk.timestamp.slice(11, 19);
                 addAudioLog(`${time} ${transcript.slice(0, 40)}`);
-                // Write channel event for MCP server
-                const audioEventPath = join(DATA_DIR, "channel_audio_event.json");
-                await Bun.write(audioEventPath, JSON.stringify({
-                  timestamp: chunk.timestamp,
-                  transcript,
-                }));
-                if (radioChannelActive) {
+                // Write channel event for MCP server (only when RADIO is active)
+                if (radioChannelRef.current) {
+                  const audioEventPath = join(DATA_DIR, "channel_audio_event.json");
+                  await Bun.write(audioEventPath, JSON.stringify({
+                    timestamp: chunk.timestamp,
+                    transcript,
+                  }));
                   addBroadcastLog(`${time} RADIO → ${transcript.slice(0, 25)}`);
                 }
               }
@@ -675,7 +688,7 @@ function App() {
       {/* Controls */}
       <Box paddingX={1} marginTop={0}>
         <Text color="green">
-          [↑↓] NAV  [T] TOGGLE FEED  [A] MIC {audioEnabled ? "OFF" : "ON"}  [1] TV {tvChannelActive ? "OFF" : "ON"}  [2] RADIO {radioChannelActive ? "OFF" : "ON"}  [-/+] INTERVAL  [Q] QUIT
+          [↑↓] NAV  [T] TOGGLE FEED  [A] MIC {audioEnabled ? "OFF" : "ON"}  [1] TV {tvChannelActive ? "OFF" : "ON"}  [2] RADIO {radioChannelActive ? "OFF" : "ON"}  [ ] ] INTERVAL  [Q] QUIT
         </Text>
       </Box>
     </Box>
