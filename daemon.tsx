@@ -133,7 +133,6 @@ interface TrackedWindow {
 
 // --- Polling interval ---
 const POLL_MS = 3000;
-const RECORD_MS = 5000;
 
 // --- React TUI ---
 function App() {
@@ -144,6 +143,9 @@ function App() {
   const [recordCount, setRecordCount] = useState(0);
   const [screenSize, setScreenSize] = useState("0 MB");
   const [audioSize, setAudioSize] = useState("0 MB");
+  const [screenIntervalSec, setScreenIntervalSec] = useState(typeof _savedSettings.screenIntervalSec === "number" ? _savedSettings.screenIntervalSec : 5);
+  const screenIntervalRef = useRef(typeof _savedSettings.screenIntervalSec === "number" ? _savedSettings.screenIntervalSec : 5);
+  const [tvBroadcastCount, setTvBroadcastCount] = useState(0);
 
   // Update storage sizes every 10s
   useEffect(() => {
@@ -165,12 +167,9 @@ function App() {
   }, []);
 
   // History logs
-  const [screenLog, setScreenLog] = useState<string[]>([]);
   const [audioLog, setAudioLog] = useState<string[]>([]);
-  const [broadcastLog, setBroadcastLog] = useState<string[]>([]);
-  const addScreenLog = (entry: string) => setScreenLog((prev) => [entry, ...prev].slice(0, 5));
   const addAudioLog = (entry: string) => setAudioLog((prev) => [entry, ...prev].slice(0, 5));
-  const addBroadcastLog = (entry: string) => setBroadcastLog((prev) => [entry, ...prev].slice(0, 5));
+  const [radioBroadcastCount, setRadioBroadcastCount] = useState(0);
 
   // Keep ref in sync with state
   useEffect(() => {
@@ -277,7 +276,7 @@ function App() {
       while (active) {
         // Wait for timer or event trigger
         if (!pendingEventCapture) {
-          await Bun.sleep(RECORD_MS);
+          await Bun.sleep(screenIntervalRef.current * 1000);
         }
         pendingEventCapture = false;
 
@@ -338,7 +337,6 @@ function App() {
           const emb = generateEmbedding(textForEmbed);
           insertStmt.run(ts, w.pid, w.window_index, w.app, w.title, textsJson, emb, screenshotPath);
           setRecordCount((c) => c + 1);
-          addScreenLog(`${time} ${w.app} — ${(w.title || "").slice(0, 30)}`);
         }
 
         // Broadcast all changed screenshots as a single TV event
@@ -353,7 +351,7 @@ function App() {
             })),
           }));
           const names = changedScreenshots.map((s) => s.app).join(", ");
-          addBroadcastLog(`${time} TV → ${names}`);
+          setTvBroadcastCount((c) => c + 1);
         }
       }
     }
@@ -412,8 +410,12 @@ function App() {
   }, [audioEnabled]);
   useEffect(() => {
     audioChunkRef.current = audioChunkSec;
-    Bun.write(SETTINGS_PATH, JSON.stringify({ audioChunkSec }));
+    Bun.write(SETTINGS_PATH, JSON.stringify({ audioChunkSec, screenIntervalSec }));
   }, [audioChunkSec]);
+  useEffect(() => {
+    screenIntervalRef.current = screenIntervalSec;
+    Bun.write(SETTINGS_PATH, JSON.stringify({ audioChunkSec, screenIntervalSec }));
+  }, [screenIntervalSec]);
 
   useEffect(() => {
     let active = true;
@@ -492,7 +494,7 @@ function App() {
                     timestamp: chunk.timestamp,
                     transcript,
                   }));
-                  addBroadcastLog(`${time} RADIO → ${transcript.slice(0, 25)}`);
+                  setRadioBroadcastCount((c) => c + 1);
                 }
               }
             } catch {}
@@ -562,13 +564,34 @@ function App() {
       return;
     }
 
-    // Audio chunk interval
+    // Screen capture interval
     if (input === "[") {
-      setAudioChunkSec((prev) => Math.max(5, prev - 5));
+      setScreenIntervalSec((prev: number) => Math.max(3, prev - 1));
       return;
     }
     if (input === "]") {
-      setAudioChunkSec((prev) => Math.min(60, prev + 5));
+      setScreenIntervalSec((prev: number) => Math.min(30, prev + 1));
+      return;
+    }
+
+    // Delete all recorded data
+    if (input === "d" || input === "D") {
+      db.run("DELETE FROM screen_states");
+      db.run("DELETE FROM audio_transcripts");
+      // Clear screenshot files
+      try {
+        const files = Bun.spawnSync(["find", SCREENSHOTS_DIR, "-name", "*.png", "-delete"], { stdout: "pipe", stderr: "pipe" });
+      } catch {}
+      // Clear audio files
+      try {
+        Bun.spawnSync(["find", AUDIO_DIR, "-name", "*.wav", "-delete"], { stdout: "pipe", stderr: "pipe" });
+      } catch {}
+      setRecordCount(0);
+      setAudioCount(0);
+      setTvBroadcastCount(0);
+      setRadioBroadcastCount(0);
+      setScreenSize("0B");
+      setAudioSize("0B");
       return;
     }
 
@@ -660,7 +683,7 @@ function App() {
                 FEEDS: {allowed.length}/{configured.length}
               </Text>
               <Text color="green">
-                {recBlink ? "●" : "○"} REC {recordCount}  [{screenSize}]
+                {recBlink ? "●" : "○"} REC {recordCount}  [{screenSize}]  [{screenIntervalSec}s]
               </Text>
             </Box>
             {configured.length > 0 ? (
@@ -706,14 +729,6 @@ function App() {
                 </Text>
               </Box>
             ) : null}
-            {screenLog.length > 0 ? (
-              <Box flexDirection="column" marginTop={0}>
-                <Text color="gray"> RECENT </Text>
-                {screenLog.map((entry, i) => (
-                  <Text key={i} color="gray">  {entry}</Text>
-                ))}
-              </Box>
-            ) : null}
           </Box>
 
           {/* AUDIO */}
@@ -743,29 +758,14 @@ function App() {
         {/* ═══ BROADCAST ═══ */}
         <Box flexDirection="column" borderStyle="single" borderColor={tvChannelActive || radioChannelActive ? "cyan" : "gray"} paddingX={1}>
           <Text color={tvChannelActive || radioChannelActive ? "cyan" : "gray"} bold> BROADCAST </Text>
-          <Box flexDirection="column" marginTop={0}>
+          <Box gap={2}>
             <Text color={tvChannelActive ? "cyan" : "gray"}>
-              {tvChannelActive ? "●" : "○"} TV
-            </Text>
-            <Text color={tvChannelActive ? "cyan" : "gray"}>
-              {"  "}{tvChannelActive ? "ON AIR" : "STANDBY"}
-            </Text>
-            <Text> </Text>
-            <Text color={radioChannelActive ? "cyan" : "gray"}>
-              {radioChannelActive ? "●" : "○"} RADIO
+              {tvChannelActive ? "●" : "○"} TV {tvChannelActive ? "ON AIR" : "STANDBY"}  SENT {tvBroadcastCount}
             </Text>
             <Text color={radioChannelActive ? "cyan" : "gray"}>
-              {"  "}{radioChannelActive ? "ON AIR" : "STANDBY"}  [{audioChunkSec}s]
+              {radioChannelActive ? "●" : "○"} RADIO {radioChannelActive ? "ON AIR" : "STANDBY"}  SENT {radioBroadcastCount}  [{audioChunkSec}s]
             </Text>
           </Box>
-          {broadcastLog.length > 0 ? (
-            <Box flexDirection="column" marginTop={0}>
-              <Text color="gray"> LOG </Text>
-              {broadcastLog.map((entry, i) => (
-                <Text key={i} color="gray">  {entry}</Text>
-              ))}
-            </Box>
-          ) : null}
         </Box>
 
       </Box>
@@ -773,7 +773,7 @@ function App() {
       {/* Controls */}
       <Box paddingX={1} marginTop={0}>
         <Text color="green">
-          [↑↓] NAV  [T] TOGGLE FEED  [A] MIC {audioEnabled ? "OFF" : "ON"}  [1] TV {tvChannelActive ? "OFF" : "ON"}  [2] RADIO {radioChannelActive ? "OFF" : "ON"}  [ ] ] INTERVAL  [Q] QUIT
+          [↑↓] NAV  [T] TOGGLE  [A] MIC  [1] TV  [2] RADIO  [[ ]] INTERVAL  [D] DELETE ALL  [Q] QUIT
         </Text>
       </Box>
     </Box>
