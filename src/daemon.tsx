@@ -217,7 +217,7 @@ function App() {
     let active = true;
     const lastTexts = new Map<string, string>();
     const EVENT_MONITOR_PATH = join(dirname(process.execPath), "tunr-event-monitor");
-    const EVENT_MONITOR_FALLBACK = join(import.meta.dir, "tunr-event-monitor");
+    const EVENT_MONITOR_FALLBACK = join(import.meta.dir, "..", "tunr-event-monitor");
     let pendingEventCapture = false;
 
     async function startEventMonitor() {
@@ -281,7 +281,7 @@ function App() {
   useEffect(() => {
     let active = true;
     const AUDIO_CAPTURE_PATH = join(dirname(process.execPath), "tunr-audio-capture");
-    const AUDIO_CAPTURE_FALLBACK = join(import.meta.dir, "tunr-audio-capture");
+    const AUDIO_CAPTURE_FALLBACK = join(import.meta.dir, "..", "tunr-audio-capture");
 
     async function startAudio() {
       const audioBin = await Bun.file(AUDIO_CAPTURE_PATH).exists() ? AUDIO_CAPTURE_PATH : AUDIO_CAPTURE_FALLBACK;

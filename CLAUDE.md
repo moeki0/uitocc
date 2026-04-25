@@ -6,26 +6,28 @@ Screen context provider for Claude Code via MCP channels.
 
 ```bash
 bun install
-swiftc ax_text.swift -o tunr-ax-text -O
-swiftc send.swift -o tunr-send -O
-bun daemon.tsx    # tunr start — TUI daemon
+swiftc swift/ax_text.swift -o tunr-ax-text -O
+swiftc swift/send.swift -o tunr-send -O
+bun src/daemon.tsx    # tunr start — TUI daemon
 ```
 
 ## Architecture
 
-- **daemon.tsx**: TUI daemon (Ink/React) — polls all windows, channel-based window grouping, records to SQLite
-- **mcp-server.ts**: MCP server with subscribe/unsubscribe/list_channels + search tools, per-channel event polling
-- **send.swift**: One-shot shortcut script, writes channel_event.json
-- **ax_text.swift**: AX API text extractor (`--all` for all windows as JSON), AppleScript JS for Chrome web content
-- **embed.swift**: NLEmbedding (macOS NaturalLanguage) で512次元センテンス埋め込みを生成
+- **src/daemon.tsx**: TUI daemon (Ink/React) — polls all windows, channel-based window grouping, records to SQLite
+- **src/mcp-server.ts**: MCP server with subscribe/unsubscribe/list_channels + search tools, polls DB for new records and notifies subscribed channels
+- **src/cli.ts**: Entry point — dispatches `mcp`, `send`, `start` subcommands
+- **src/lib/**: Shared TypeScript modules (capture, db, rules, types, constants)
+- **swift/send.swift**: One-shot shortcut script, writes channel_event.json
+- **swift/ax_text.swift**: AX API text extractor (`--all` for all windows as JSON), AppleScript JS for Chrome web content
+- **swift/embed.swift**: Generates 512-dim sentence embeddings via macOS NaturalLanguage NLEmbedding
 
 ## Channels
 
-チャンネル = ウィンドウのグルーピング単位。TUIでチャンネルを作成し、SOURCESパネルでウィンドウを手動でチャンネルに割り当て。チャンネルに割り当て済み = キャプチャ＆ブロードキャスト、未割り当て = 何もしない。Claude Codeは `subscribe(channel)` で購読。
+Channel = unit of window grouping. Create channels in the TUI, then manually assign windows to channels in the SOURCES panel. Assigned = captured & recorded; unassigned = ignored. Claude Code subscribes with `subscribe(channel)`.
 
-- ウィンドウごとにチャンネルを手動割り当て（Enter で切り替え）
-- 1つのウィンドウが複数チャンネルに割り当て可能
-- 購読中のチャンネルのみイベント通知が発生
+- Manual per-window channel assignment (toggle with Enter)
+- One window can belong to multiple channels
+- Events are only emitted for subscribed channels
 
 ## MCP Tools
 
@@ -45,3 +47,26 @@ bun daemon.tsx    # tunr start — TUI daemon
 
 When the user references something they were looking at or listening to, or screen/audio context would help understand their request, proactively use these tools.
 
+## Release
+
+1. Bump `version` in `package.json`
+2. Commit, tag, and push
+   ```bash
+   git add -A
+   git commit -m "v1.x.x: <summary>"
+   git tag v1.x.x
+   git push origin main --tags
+   ```
+3. Update Homebrew formula (`../homebrew-tunr/Formula/tunr.rb`)
+   - Update `url` to new version
+   - Update `sha256`: `curl -sL <tarball-url> | shasum -a 256`
+   ```bash
+   cd ../homebrew-tunr
+   git add Formula/tunr.rb
+   git commit -m "tunr 1.x.x"
+   git push origin main
+   ```
+4. Create GitHub Release
+   ```bash
+   gh release create v1.x.x --title "v1.x.x" --notes "..."
+   ```

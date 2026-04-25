@@ -38,7 +38,7 @@ function openDbWritable(): Database | null {
 
 // --- Embedding helpers ---
 const EMBED_PATH = join(dirname(process.execPath), "tunr-embed");
-const EMBED_FALLBACK = join(import.meta.dir, "tunr-embed");
+const EMBED_FALLBACK = join(import.meta.dir, "..", "tunr-embed");
 const embedBin = existsSync(EMBED_PATH) ? EMBED_PATH : EMBED_FALLBACK;
 
 function queryEmbedding(text: string): Float64Array | null {

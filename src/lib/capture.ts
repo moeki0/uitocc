@@ -1,7 +1,7 @@
 import { dirname, join } from "path";
 import type { WindowInfo } from "./types";
 
-const PROJECT_DIR = join(import.meta.dir, "..");
+const PROJECT_DIR = join(import.meta.dir, "../..");
 
 const AX_TEXT_PATH = join(dirname(process.execPath), "tunr-ax-text");
 const AX_TEXT_FALLBACK = join(PROJECT_DIR, "tunr-ax-text");

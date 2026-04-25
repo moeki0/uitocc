@@ -3,21 +3,21 @@ SWIFT_TARGET ?= arm64-apple-macos14.0
 
 all: tunr tunr-ax-text tunr-send tunr-embed tunr-audio-capture
 
-tunr: cli.ts mcp-server.ts daemon.tsx
-	bun build --compile cli.ts --outfile tunr
+tunr: src/cli.ts src/mcp-server.ts src/daemon.tsx
+	bun build --compile src/cli.ts --outfile tunr
 	codesign -s - tunr 2>/dev/null || true
 
-tunr-ax-text: ax_text.swift
-	swiftc ax_text.swift -o tunr-ax-text -O -target $(SWIFT_TARGET)
+tunr-ax-text: swift/ax_text.swift
+	swiftc swift/ax_text.swift -o tunr-ax-text -O -target $(SWIFT_TARGET)
 
-tunr-send: send.swift
-	swiftc send.swift -o tunr-send -O -target $(SWIFT_TARGET)
+tunr-send: swift/send.swift
+	swiftc swift/send.swift -o tunr-send -O -target $(SWIFT_TARGET)
 
-tunr-embed: embed.swift
-	swiftc embed.swift -o tunr-embed -O -target $(SWIFT_TARGET)
+tunr-embed: swift/embed.swift
+	swiftc swift/embed.swift -o tunr-embed -O -target $(SWIFT_TARGET)
 
-tunr-audio-capture: audio_capture.swift
-	swiftc audio_capture.swift -o tunr-audio-capture -O -target $(SWIFT_TARGET) -framework AVFoundation -framework CoreAudio
+tunr-audio-capture: swift/audio_capture.swift
+	swiftc swift/audio_capture.swift -o tunr-audio-capture -O -target $(SWIFT_TARGET) -framework AVFoundation -framework CoreAudio
 
 install: all
 	install -d $(PREFIX)/bin

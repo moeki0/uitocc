@@ -25,7 +25,7 @@ switch (command) {
     break;
   case "--version":
   case "-v":
-    console.log((await import("./package.json")).version);
+    console.log((await import("../package.json")).version);
     break;
   default:
     console.log(`tunr — Screen context provider for Claude Code
