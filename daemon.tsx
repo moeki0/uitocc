@@ -142,6 +142,27 @@ function App() {
   const windowsRef = useRef<Map<string, TrackedWindow>>(new Map());
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [recordCount, setRecordCount] = useState(0);
+  const [screenSize, setScreenSize] = useState("0 MB");
+  const [audioSize, setAudioSize] = useState("0 MB");
+
+  // Update storage sizes every 10s
+  useEffect(() => {
+    function updateSizes() {
+      try {
+        const dbStat = Bun.spawnSync(["du", "-sh", SCREENSHOTS_DIR], { stdout: "pipe" });
+        const dbOut = dbStat.stdout.toString().trim().split("\t")[0] || "0";
+        setScreenSize(dbOut);
+      } catch {}
+      try {
+        const audioStat = Bun.spawnSync(["du", "-sh", AUDIO_DIR], { stdout: "pipe" });
+        const audioOut = audioStat.stdout.toString().trim().split("\t")[0] || "0";
+        setAudioSize(audioOut);
+      } catch {}
+    }
+    updateSizes();
+    const iv = setInterval(updateSizes, 10000);
+    return () => clearInterval(iv);
+  }, []);
 
   // History logs
   const [screenLog, setScreenLog] = useState<string[]>([]);
@@ -605,7 +626,7 @@ function App() {
                 FEEDS: {allowed.length}/{configured.length}
               </Text>
               <Text color="green">
-                {recBlink ? "●" : "○"} REC {recordCount}
+                {recBlink ? "●" : "○"} REC {recordCount}  [{screenSize}]
               </Text>
             </Box>
             {configured.length > 0 ? (
@@ -666,7 +687,7 @@ function App() {
             <Box gap={2}>
               <Text color={audioEnabled ? "green" : "gray"} bold> AUDIO </Text>
               <Text color={audioEnabled ? (audioStatus === "recording" ? "green" : "yellow") : "red"}>
-                {audioEnabled && audioStatus === "recording" ? (recBlink ? "●" : "○") : "○"} MIC {audioEnabled ? audioStatus.toUpperCase() : "OFF"}
+                {audioEnabled && audioStatus === "recording" ? (recBlink ? "●" : "○") : "○"} MIC {audioEnabled ? audioStatus.toUpperCase() : "OFF"}  [{audioSize}]
               </Text>
             </Box>
             {audioEnabled && lastTranscript ? (
