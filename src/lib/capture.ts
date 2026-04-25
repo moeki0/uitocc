@@ -39,6 +39,19 @@ export async function getAllWindows(): Promise<WindowInfo[]> {
   }
 }
 
+export function cosineSimilarity(a: Buffer, b: Buffer): number {
+  let dot = 0, normA = 0, normB = 0;
+  for (let i = 0; i < a.length; i += 8) {
+    const va = a.readDoubleBE(i);
+    const vb = b.readDoubleBE(i);
+    dot += va * vb;
+    normA += va * va;
+    normB += vb * vb;
+  }
+  const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  return denom === 0 ? 0 : dot / denom;
+}
+
 export function windowKey(w: { pid: number; window_index: number }): string {
   return `${w.pid}:${w.window_index}`;
 }

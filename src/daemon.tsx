@@ -16,7 +16,7 @@ import type { View, SettingsTab, FocusArea } from "./lib/types";
 import { DB_PATH, SETTINGS_PATH, AUDIO_DIR, AUDIO_SOURCE_KEY, POLL_MS, savedAudioChunkSec, savedSettings } from "./lib/constants";
 import { db, insertStmt, insertAudioStmt, localDateStr, getRecentCaptures, getDailyCounts, getHourlyCountsForDate, getCapturesForDate } from "./lib/db";
 import { getChannels, getActiveSubscriptions } from "./lib/rules";
-import { generateEmbedding, getAllWindows, windowKey } from "./lib/capture";
+import { generateEmbedding, getAllWindows, windowKey, cosineSimilarity } from "./lib/capture";
 import { checkForUpdate } from "./lib/update-check";
 
 // ===== TUI =====
@@ -38,6 +38,10 @@ function App() {
     typeof savedSettings.screenIntervalSec === "number" ? savedSettings.screenIntervalSec : 5
   );
   const screenIntervalRef = useRef(screenIntervalSec);
+  const [changeThreshold, setChangeThreshold] = useState(
+    typeof savedSettings.changeThreshold === "number" ? savedSettings.changeThreshold : 0.5
+  );
+  const changeThresholdRef = useRef(changeThreshold);
 
   // Audio
   const [audioStatus, setAudioStatus] = useState("starting");
@@ -151,12 +155,16 @@ function App() {
   }, []);
   useEffect(() => {
     audioChunkRef.current = audioChunkSec;
-    Bun.write(SETTINGS_PATH, JSON.stringify({ audioChunkSec, screenIntervalSec }, null, 2));
+    Bun.write(SETTINGS_PATH, JSON.stringify({ audioChunkSec, screenIntervalSec, changeThreshold }, null, 2));
   }, [audioChunkSec]);
   useEffect(() => {
     screenIntervalRef.current = screenIntervalSec;
-    Bun.write(SETTINGS_PATH, JSON.stringify({ audioChunkSec, screenIntervalSec }, null, 2));
+    Bun.write(SETTINGS_PATH, JSON.stringify({ audioChunkSec, screenIntervalSec, changeThreshold }, null, 2));
   }, [screenIntervalSec]);
+  useEffect(() => {
+    changeThresholdRef.current = changeThreshold;
+    Bun.write(SETTINGS_PATH, JSON.stringify({ audioChunkSec, screenIntervalSec, changeThreshold }, null, 2));
+  }, [changeThreshold]);
 
   // Refresh channels + subscriptions + captures + storage size periodically
   useEffect(() => {
@@ -224,37 +232,11 @@ function App() {
   // --- Recording ---
   useEffect(() => {
     let active = true;
-    const lastTexts = new Map<string, string>();
-    const EVENT_MONITOR_PATH = join(dirname(process.execPath), "tunr-event-monitor");
-    const EVENT_MONITOR_FALLBACK = join(import.meta.dir, "..", "tunr-event-monitor");
-    let pendingEventCapture = false;
-
-    async function startEventMonitor() {
-      const monBin = await Bun.file(EVENT_MONITOR_PATH).exists() ? EVENT_MONITOR_PATH : EVENT_MONITOR_FALLBACK;
-      if (!await Bun.file(monBin).exists()) return;
-      const proc = Bun.spawn([monBin], { stdout: "pipe", stderr: "pipe" });
-      const reader = proc.stdout.getReader();
-      const decoder = new TextDecoder();
-      let buf = "";
-      while (active) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const lines = buf.split("\n");
-        buf = lines.pop() || "";
-        for (const line of lines) {
-          if (line.trim()) pendingEventCapture = true;
-        }
-      }
-    }
-    startEventMonitor();
+    const lastEmbeddings = new Map<string, Buffer>();
 
     async function record() {
       while (active) {
-        if (!pendingEventCapture) {
-          await Bun.sleep(screenIntervalRef.current * 1000);
-        }
-        pendingEventCapture = false;
+        await Bun.sleep(screenIntervalRef.current * 1000);
 
         const found = await getAllWindows();
         const foundMap = new Map(found.map((w) => [windowKey(w), w]));
@@ -265,18 +247,22 @@ function App() {
           if (!w.texts || w.texts.length === 0) continue;
           const key = windowKey(w);
 
-          // Only record windows assigned to channels
           const tw = currentWindows.get(key);
           if (!tw || tw.channels.length === 0) continue;
 
-          const textsJson = JSON.stringify(w.texts);
-          if (lastTexts.get(key) === textsJson) continue;
-          lastTexts.set(key, textsJson);
-
-          const chans = tw.channels;
-          const channelNamesJson = JSON.stringify(chans);
-
           const embedding = generateEmbedding(w.texts.join("\n"));
+
+          // Filter by embedding distance
+          const prev = lastEmbeddings.get(key);
+          if (embedding && prev) {
+            const sim = cosineSimilarity(prev, embedding);
+            const distance = 1 - sim;
+            if (distance < changeThresholdRef.current) continue;
+          }
+          if (embedding) lastEmbeddings.set(key, embedding);
+
+          const textsJson = JSON.stringify(w.texts);
+          const channelNamesJson = JSON.stringify(tw.channels);
           insertStmt.run(ts, w.pid, w.window_index, w.app, w.title, textsJson, embedding, null, channelNamesJson);
           setRecordCount((c) => c + 1);
         }
@@ -484,15 +470,22 @@ function App() {
           return;
         }
         if (settingsIndex === 1 && (input === "[" || input === "]")) {
+          setChangeThreshold(p => {
+            const v = input === "[" ? Math.max(0, Math.round((p - 0.05) * 100) / 100) : Math.min(1, Math.round((p + 0.05) * 100) / 100);
+            return v;
+          });
+          return;
+        }
+        if (settingsIndex === 2 && (input === "[" || input === "]")) {
           setAudioChunkSec(p => input === "[" ? Math.max(5, p - 1) : Math.min(60, p + 1));
           return;
         }
-        if (settingsIndex === 2 && key.return) {
+        if (settingsIndex === 3 && key.return) {
           if (deleteConfirm) {
             db.run("DELETE FROM screen_states");
             db.run("DELETE FROM audio_transcripts");
             try { Bun.spawnSync(["find", AUDIO_DIR, "-name", "*.wav", "-delete"], { stdout: "pipe", stderr: "pipe" }); } catch {}
-            setRecordCount(0); setBroadcastCount(0); setAudioBroadcastCount(0);
+            setRecordCount(0); setAudioBroadcastCount(0);
             setDeleteConfirm(false);
           } else {
             setDeleteConfirm(true);
@@ -811,13 +804,18 @@ function App() {
               </Box>
               <Box paddingLeft={1}>
                 <Text color={settingsIndex === 1 ? "magenta" : "white"}>
-                  {settingsIndex === 1 ? "▸" : " "} Audio chunk: {audioChunkSec}s  [[ ]] adjust
+                  {settingsIndex === 1 ? "▸" : " "} Change threshold: {changeThreshold.toFixed(2)}  [[ ]] adjust
+                </Text>
+              </Box>
+              <Box paddingLeft={1}>
+                <Text color={settingsIndex === 2 ? "magenta" : "white"}>
+                  {settingsIndex === 2 ? "▸" : " "} Audio chunk: {audioChunkSec}s  [[ ]] adjust
                 </Text>
               </Box>
               <Text color="gray" bold dimColor marginTop={1}>STORAGE</Text>
               <Box paddingLeft={1}>
-                <Text color={settingsIndex === 2 ? "magenta" : "white"}>
-                  {settingsIndex === 2 ? "▸" : " "} {deleteConfirm ? <Text color="red" bold>Press Enter to confirm DELETE ALL</Text> : "Delete all captures  [Enter]"}
+                <Text color={settingsIndex === 3 ? "magenta" : "white"}>
+                  {settingsIndex === 3 ? "▸" : " "} {deleteConfirm ? <Text color="red" bold>Press Enter to confirm DELETE ALL</Text> : "Delete all captures  [Enter]"}
                 </Text>
               </Box>
               <Box paddingLeft={1} marginTop={1}>
