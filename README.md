@@ -59,7 +59,7 @@ uitocc includes a Claude Code plugin that auto-invokes when you reference screen
 In Claude Code:
 
 ```
-/plugin marketplace add moeki0/uitocc
+/plugin marketplace add moeki0/uitocc-skill
 /plugin install uitocc@uitocc
 ```
 
