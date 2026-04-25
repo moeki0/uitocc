@@ -71,19 +71,78 @@ func getWindows(_ appEl: AXUIElement) -> [AXUIElement] {
     axValue(appEl, kAXWindowsAttribute) as? [AXUIElement] ?? []
 }
 
-// Chromium-based browsers don't expose web content in the AX tree by default.
-// Setting AXManualAccessibility on the AXApplication element enables it
-// without the window-manager side effects of AXEnhancedUserInterface.
-let chromiumBundleIDs: Set<String> = [
-    "com.google.Chrome", "com.google.Chrome.canary",
-    "com.microsoft.edgemac", "com.brave.Browser",
-    "com.vivaldi.Vivaldi", "com.operasoftware.Opera",
-    "com.arc.Arc",
+// Chrome/Chromium don't expose web content via macOS AX API.
+// Use AppleScript to execute JS and get page text for supported browsers.
+let browserAppleScriptNames: [String: String] = [
+    "com.google.Chrome": "Google Chrome",
+    "com.google.Chrome.canary": "Google Chrome Canary",
+    "com.microsoft.edgemac": "Microsoft Edge",
+    "com.brave.Browser": "Brave Browser",
+    "com.vivaldi.Vivaldi": "Vivaldi",
+    "com.operasoftware.Opera": "Opera",
 ]
 
-func enableAXForChromium(_ app: NSRunningApplication) {
-    let axApp = AXUIElementCreateApplication(app.processIdentifier)
-    AXUIElementSetAttributeValue(axApp, "AXManualAccessibility" as CFString, true as CFTypeRef)
+func getBrowserTabTexts(appScriptName: String) -> [[String: Any]] {
+    // Get tab texts via AppleScript JS execution
+    let script = """
+    tell application "\(appScriptName)"
+        set output to ""
+        repeat with w from 1 to (count of windows)
+            repeat with i from 1 to (count of tabs of window w)
+                set t to title of tab i of window w
+                set u to URL of tab i of window w
+                try
+                    tell tab i of window w
+                        set txt to execute javascript "document.body.innerText.substring(0, 5000)"
+                    end tell
+                on error
+                    set txt to ""
+                end try
+                set output to output & "|||WINDEX=" & w & "|||TINDEX=" & i & "|||TITLE=" & t & "|||URL=" & u & "|||TEXT=" & txt & "|||END"
+            end repeat
+        end repeat
+        return output
+    end tell
+    """
+    let proc = Process()
+    proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+    proc.arguments = ["-e", script]
+    let pipe = Pipe()
+    proc.standardOutput = pipe
+    proc.standardError = Pipe()
+    do {
+        try proc.run()
+        proc.waitUntilExit()
+    } catch { return [] }
+    guard proc.terminationStatus == 0 else { return [] }
+    let raw = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+
+    var results: [[String: Any]] = []
+    let chunks = raw.components(separatedBy: "|||END")
+    for chunk in chunks {
+        guard chunk.contains("|||TITLE=") else { continue }
+        func extract(_ key: String) -> String {
+            guard let range = chunk.range(of: "|||\(key)=") else { return "" }
+            let after = chunk[range.upperBound...]
+            if let end = after.range(of: "|||") {
+                return String(after[..<end.lowerBound])
+            }
+            return String(after)
+        }
+        let wIdx = Int(extract("WINDEX")) ?? 0
+        let tIdx = Int(extract("TINDEX")) ?? 0
+        let title = extract("TITLE")
+        let text = extract("TEXT").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !text.isEmpty {
+            results.append([
+                "window_index": wIdx - 1,
+                "tab_index": tIdx - 1,
+                "title": title,
+                "text": text,
+            ])
+        }
+    }
+    return results
 }
 
 // --all mode: enumerate all windows from all apps as JSON
@@ -93,10 +152,11 @@ if CommandLine.arguments.contains("--all") {
         $0.activationPolicy == .regular
     }
 
-    // Enable AX tree for Chromium browsers before querying
+    // Collect browser tab texts via AppleScript (keyed by app name + window index)
+    var browserTexts: [String: [[String: Any]]] = [:]
     for app in apps {
-        if let bid = app.bundleIdentifier, chromiumBundleIDs.contains(bid) {
-            enableAXForChromium(app)
+        if let bid = app.bundleIdentifier, let asName = browserAppleScriptNames[bid] {
+            browserTexts[app.localizedName ?? asName] = getBrowserTabTexts(appScriptName: asName)
         }
     }
 
@@ -110,10 +170,31 @@ if CommandLine.arguments.contains("--all") {
         let cgWindows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
         let appCGWindows = cgWindows.filter { ($0[kCGWindowOwnerPID as String] as? Int32) == pid }
 
+        // Check if this app has browser tab texts
+        let tabTexts = browserTexts[appName]
+
         for (idx, win) in windows.enumerated() {
             let title = axValue(win, kAXTitleAttribute) as? String ?? ""
             var texts: [String] = []
-            collectTexts(win, depth: 0, maxDepth: 30, results: &texts, limit: 500)
+
+            // For browsers, use AppleScript-sourced tab texts for matching window
+            if let tabs = tabTexts {
+                // Find tabs belonging to this window
+                let windowTabs = tabs.filter { ($0["window_index"] as? Int) == idx }
+                for tab in windowTabs {
+                    if let text = tab["text"] as? String, !text.isEmpty {
+                        let tabTitle = tab["title"] as? String ?? ""
+                        if !tabTitle.isEmpty { texts.append("[\(tabTitle)]") }
+                        texts.append(text)
+                    }
+                }
+            }
+
+            // Fall back to AX tree if no browser texts
+            if texts.isEmpty {
+                collectTexts(win, depth: 0, maxDepth: 30, results: &texts, limit: 500)
+            }
+
             // Match CGWindowID by title or index
             var windowID: Int = 0
             if let matched = appCGWindows.first(where: { ($0[kCGWindowName as String] as? String) == title && !title.isEmpty }) {
