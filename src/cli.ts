@@ -34,6 +34,16 @@ switch (command) {
     await runDoctor();
     break;
   }
+  case "export": {
+    const { runExport } = await import("./export.ts");
+    await runExport(args);
+    break;
+  }
+  case "import": {
+    const { runImport } = await import("./import.ts");
+    await runImport(args);
+    break;
+  }
   case "--version":
   case "-v":
     const { VERSION } = await import("./lib/constants");
@@ -50,6 +60,8 @@ Usage:
   tunr setup         Set up permissions and MCP registration
   tunr setup --audio Set up audio capture
   tunr doctor        Check your tunr installation
+  tunr export        Export captures to NDJSON+gzip
+  tunr import <path> Import captures from NDJSON+gzip
 
 Ingest:
   echo "text" | tunr ingest --source <name> [--channel <name>] [--meta key=value]`);
