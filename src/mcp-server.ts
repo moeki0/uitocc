@@ -713,15 +713,17 @@ async function pollDb() {
         const event = isUserSend ? "user_send" : "screen";
 
         for (const ch of matched) {
-          // Skip if same content was already sent for this window+channel (unless user_send)
+          // Skip if same content was already sent for this page+channel (unless user_send)
+          // Key by window+title so tab switches don't overwrite each other's hashes
+          const hashKey = `${wKey}\0${r.window_title}`;
           if (!isUserSend) {
             const chHashes = sentHashes.get(ch);
-            if (chHashes?.get(wKey) === contentHash) continue;
+            if (chHashes?.get(hashKey) === contentHash) continue;
           }
           // Update hash
           let chHashes = sentHashes.get(ch);
           if (!chHashes) { chHashes = new Map(); sentHashes.set(ch, chHashes); }
-          chHashes.set(wKey, contentHash);
+          chHashes.set(hashKey, contentHash);
 
           await mcp.notification({
             method: "notifications/claude/channel",
