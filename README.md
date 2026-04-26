@@ -191,6 +191,95 @@ chmod +x ~/.config/git/hooks/post-commit
 git config --global core.hooksPath ~/.config/git/hooks
 ```
 
+#### Claude Code hooks
+
+Record your own prompts, tool uses, and turn completions from Claude Code into tunr — searchable later via `search_screen_history`.
+
+Create a hook script that forwards Claude Code's hook payload (JSON on stdin) to `tunr ingest`:
+
+```bash
+mkdir -p ~/.claude/hooks
+cat > ~/.claude/hooks/tunr-ingest.sh << 'HOOK'
+#!/bin/bash
+set -euo pipefail
+
+event="${1:-unknown}"
+payload="$(cat)"
+session=$(printf '%s' "$payload" | jq -r '.session_id // ""')
+
+case "$event" in
+  user_prompt)
+    body=$(printf '%s' "$payload" | jq -r '.prompt // ""')
+    ;;
+  tool_use)
+    tool=$(printf '%s' "$payload" | jq -r '.tool_name // ""')
+    body=$(printf '%s' "$payload" | jq -r '"Tool: \(.tool_name)\nInput: \(.tool_input | tostring)"')
+    printf '%s' "$body" | tunr ingest \
+      --source claude-code \
+      --meta "event=tool_use" \
+      --meta "tool=$tool" \
+      --meta "session=$session"
+    exit 0
+    ;;
+  stop)
+    transcript=$(printf '%s' "$payload" | jq -r '.transcript_path // ""')
+    if [ -n "$transcript" ] && [ -f "$transcript" ]; then
+      body=$(tail -n 50 "$transcript" \
+        | jq -rs 'map(select(.type=="assistant")) | last
+                  | (.message.content // [])
+                  | map(select(.type=="text") | .text) | join("\n")')
+    else
+      body="Claude Code turn completed"
+    fi
+    ;;
+  *)
+    body="$payload"
+    ;;
+esac
+
+printf '%s' "$body" | tunr ingest \
+  --source claude-code \
+  --meta "event=$event" \
+  --meta "session=$session"
+HOOK
+chmod +x ~/.claude/hooks/tunr-ingest.sh
+```
+
+Then wire the hooks into `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "command", "command": "~/.claude/hooks/tunr-ingest.sh user_prompt" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "~/.claude/hooks/tunr-ingest.sh tool_use" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "command", "command": "~/.claude/hooks/tunr-ingest.sh stop" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Adjust the `PostToolUse` matcher (`Bash`, `Edit`, `Write`, etc.) to record only the tools you care about.
+
 ### Send (one-shot)
 
 Capture the frontmost window and send it to Claude Code instantly:
