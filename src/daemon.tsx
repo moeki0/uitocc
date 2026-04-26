@@ -669,6 +669,10 @@ function App() {
       setTypeFilter(p => p.includes("audio") ? p.filter(t => t !== "audio") : [...p, "audio"]);
       return;
     }
+    if (input === "0") {
+      setTypeFilter(p => p.includes("ingested") ? p.filter(t => t !== "ingested") : [...p, "ingested"]);
+      return;
+    }
 
     // Toggle channel filter (3-9 mapped to channels)
     if (input >= "3" && input <= "9") {
@@ -793,6 +797,10 @@ function App() {
         color={typeFilter.includes("audio") ? "white" : "gray"}
         inverse={typeFilter.includes("audio")}
       >[2] ♪ audio</Text>
+      <Text
+        color={typeFilter.includes("ingested") ? "white" : "gray"}
+        inverse={typeFilter.includes("ingested")}
+      >[0] ⇥ ingested</Text>
       <Text color="gray">│</Text>
       {channels.map((ch, i) => (
         <Text
