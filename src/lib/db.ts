@@ -61,6 +61,23 @@ export const insertStmt = db.prepare(
   `INSERT INTO screen_states (timestamp, pid, window_index, app, window_title, texts, embedding, channel_names, window_id, diff_text, diff_embedding) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 );
 
+db.run(`CREATE TABLE IF NOT EXISTS ingested (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  timestamp TEXT NOT NULL,
+  source TEXT NOT NULL,
+  channel_name TEXT,
+  text TEXT NOT NULL,
+  meta TEXT,
+  embedding BLOB,
+  created_at TEXT DEFAULT (datetime('now'))
+)`);
+db.run(`CREATE INDEX IF NOT EXISTS idx_ingested_timestamp ON ingested(timestamp)`);
+db.run(`CREATE INDEX IF NOT EXISTS idx_ingested_source ON ingested(source)`);
+
+export const insertIngestedStmt = db.prepare(
+  `INSERT INTO ingested (timestamp, source, channel_name, text, meta, embedding) VALUES (?, ?, ?, ?, ?, ?)`
+);
+
 export function localDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }

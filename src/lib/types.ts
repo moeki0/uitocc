@@ -29,7 +29,7 @@ export interface TrackedSource {
 export interface Capture {
   id: string;
   timestamp: string;
-  type: "screen" | "audio";
+  type: "screen" | "audio" | "ingested";
   app: string;
   title: string;
   excerpt: string;
