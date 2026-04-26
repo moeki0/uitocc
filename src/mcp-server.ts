@@ -636,7 +636,7 @@ async function pollDb() {
 
       // New screen records
       const screens = db.prepare(
-        "SELECT id, timestamp, pid, window_index, app, window_title, texts, channel_names FROM screen_states WHERE id > ? ORDER BY id"
+        "SELECT id, timestamp, pid, window_index, window_id, app, window_title, texts, channel_names FROM screen_states WHERE id > ? ORDER BY id"
       ).all(lastScreenId) as any[];
 
       for (const r of screens) {
@@ -649,7 +649,7 @@ async function pollDb() {
         let texts: string[];
         try { texts = JSON.parse(r.texts) as string[]; } catch { texts = []; }
         const lines = texts.join("\n").split("\n");
-        const wKey = `${r.pid}:${r.window_index}`;
+        const wKey = r.window_id ? `wid:${r.window_id}` : `${r.pid}:${r.window_index}`;
         const prev = lastNotified.get(wKey);
 
         let content: string;

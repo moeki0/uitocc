@@ -17,6 +17,7 @@ export interface WindowInfo {
 export interface TrackedSource {
   pid: number;
   window_index: number;
+  window_id: number;
   app: string;
   title: string;
   urls: string[];

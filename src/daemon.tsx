@@ -96,7 +96,7 @@ function App() {
       if (prev.has(AUDIO_SOURCE_KEY)) return prev;
       const next = new Map(prev);
       next.set(AUDIO_SOURCE_KEY, {
-        pid: 0, window_index: 0,
+        pid: 0, window_index: 0, window_id: 0,
         app: "Audio", title: "System Audio",
         urls: [],
         channels: [],
@@ -264,7 +264,7 @@ function App() {
               next.set(key, { ...existing, title: w.title, urls, lastSeen: now });
             } else {
               next.set(key, {
-                pid: w.pid, window_index: w.window_index,
+                pid: w.pid, window_index: w.window_index, window_id: w.window_id,
                 app: w.app, title: w.title, urls,
                 channels: [], lastSeen: now,
               });
@@ -316,7 +316,7 @@ function App() {
             // First time seeing this window — record immediately
             const embedding = generateEmbedding(w.texts.join("\n"));
             const channelNamesJson = JSON.stringify(tw.channels);
-            insertStmt.run(new Date().toISOString(), w.pid, w.window_index, w.app, w.title, textsJson, embedding, channelNamesJson);
+            insertStmt.run(new Date().toISOString(), w.pid, w.window_index, w.app, w.title, textsJson, embedding, channelNamesJson, w.window_id);
             setRecordCount((c) => c + 1);
             windowState.set(key, { textsJson, lastChangeAt: now, recorded: true });
             continue;
@@ -334,7 +334,7 @@ function App() {
           if (!state.recorded && (now - state.lastChangeAt) >= settleSecRef.current * 1000) {
             const embedding = generateEmbedding(w.texts.join("\n"));
             const channelNamesJson = JSON.stringify(tw.channels);
-            insertStmt.run(new Date().toISOString(), w.pid, w.window_index, w.app, w.title, textsJson, embedding, channelNamesJson);
+            insertStmt.run(new Date().toISOString(), w.pid, w.window_index, w.app, w.title, textsJson, embedding, channelNamesJson, w.window_id);
             setRecordCount((c) => c + 1);
             state.recorded = true;
           }

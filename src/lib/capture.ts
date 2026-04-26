@@ -39,6 +39,8 @@ export async function getAllWindows(): Promise<WindowInfo[]> {
   }
 }
 
-export function windowKey(w: { pid: number; window_index: number }): string {
+export function windowKey(w: { pid: number; window_index: number; window_id?: number }): string {
+  // Prefer CGWindowID (stable) over window_index (array position, can shift)
+  if (w.window_id) return `wid:${w.window_id}`;
   return `${w.pid}:${w.window_index}`;
 }

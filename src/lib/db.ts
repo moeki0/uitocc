@@ -23,6 +23,7 @@ db.run(`CREATE INDEX IF NOT EXISTS idx_screen_states_app ON screen_states(app)`)
 try { db.run(`ALTER TABLE screen_states ADD COLUMN embedding BLOB`); } catch {}
 try { db.run(`ALTER TABLE screen_states DROP COLUMN screenshot_path`); } catch {}
 try { db.run(`ALTER TABLE screen_states ADD COLUMN channel_names TEXT`); } catch {}
+try { db.run(`ALTER TABLE screen_states ADD COLUMN window_id INTEGER DEFAULT 0`); } catch {}
 
 db.run(`CREATE TABLE IF NOT EXISTS channels (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,7 +56,7 @@ export const insertAudioStmt = db.prepare(
   `INSERT INTO audio_transcripts (timestamp, audio_path, transcript) VALUES (?, ?, ?)`
 );
 export const insertStmt = db.prepare(
-  `INSERT INTO screen_states (timestamp, pid, window_index, app, window_title, texts, embedding, channel_names) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  `INSERT INTO screen_states (timestamp, pid, window_index, app, window_title, texts, embedding, channel_names, window_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 );
 
 export function localDateStr(d: Date): string {
