@@ -624,7 +624,14 @@ async function pollDb() {
     try {
       // Get subscribed channels
       const subs = db.prepare("SELECT channel_name FROM channel_subscriptions WHERE paused = 0").all() as any[];
-      if (subs.length === 0) continue;
+      if (subs.length === 0) {
+        // Advance cursors so paused period is skipped on resume
+        const maxScreen = db.prepare("SELECT MAX(id) as m FROM screen_states").get() as any;
+        const maxAudio = db.prepare("SELECT MAX(id) as m FROM audio_transcripts").get() as any;
+        if (maxScreen?.m) lastScreenId = maxScreen.m;
+        if (maxAudio?.m) lastAudioId = maxAudio.m;
+        continue;
+      }
       const subNames = subs.map((s: any) => s.channel_name);
 
       // New screen records
