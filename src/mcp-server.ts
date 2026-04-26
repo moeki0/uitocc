@@ -214,6 +214,24 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
+      name: "pause",
+      description:
+        "Pause all tunr channel subscriptions. Notifications stop but subscriptions are remembered for resume.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {},
+      },
+    },
+    {
+      name: "resume",
+      description:
+        "Resume all paused tunr channel subscriptions.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {},
+      },
+    },
+    {
       name: "search_audio",
       description:
         "Search audio transcripts from system audio captured by the daemon.",
@@ -254,8 +272,11 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
     try {
       const channels = db.prepare(
         `SELECT c.name, c.include_audio,
-                EXISTS(SELECT 1 FROM channel_subscriptions cs WHERE cs.channel_name = c.name) as subscribed
-         FROM channels c ORDER BY c.id`
+                cs.channel_name IS NOT NULL as subscribed,
+                COALESCE(cs.paused, 0) as paused
+         FROM channels c
+         LEFT JOIN channel_subscriptions cs ON cs.channel_name = c.name
+         ORDER BY c.id`
       ).all() as any[];
 
       if (channels.length === 0) {
@@ -263,7 +284,9 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       }
 
       const lines = channels.map((ch) => {
-        return `${ch.subscribed ? "●" : "○"} ${ch.name} [audio: ${ch.include_audio ? "on" : "off"}]${ch.subscribed ? " (subscribed)" : ""}`;
+        const icon = ch.paused ? "⏸" : ch.subscribed ? "●" : "○";
+        const status = ch.paused ? " (paused)" : ch.subscribed ? " (subscribed)" : "";
+        return `${icon} ${ch.name} [audio: ${ch.include_audio ? "on" : "off"}]${status}`;
       });
       return { content: [{ type: "text" as const, text: lines.join("\n") }] };
     } finally {
@@ -302,6 +325,42 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
     try {
       db.run(`DELETE FROM channel_subscriptions WHERE channel_name = ?`, channel);
       return { content: [{ type: "text" as const, text: `Unsubscribed from channel "${channel}".` }] };
+    } finally {
+      db.close();
+    }
+  }
+
+  if (name === "pause") {
+    const db = openDbWritable();
+    if (!db) {
+      return { content: [{ type: "text" as const, text: "Database not available." }] };
+    }
+    try {
+      const subs = db.prepare(`SELECT channel_name FROM channel_subscriptions WHERE paused = 0`).all() as any[];
+      if (subs.length === 0) {
+        return { content: [{ type: "text" as const, text: "No active subscriptions to pause." }] };
+      }
+      db.run(`UPDATE channel_subscriptions SET paused = 1 WHERE paused = 0`);
+      const names = subs.map((s: any) => s.channel_name);
+      return { content: [{ type: "text" as const, text: `Paused ${names.length} subscription(s): ${names.join(", ")}` }] };
+    } finally {
+      db.close();
+    }
+  }
+
+  if (name === "resume") {
+    const db = openDbWritable();
+    if (!db) {
+      return { content: [{ type: "text" as const, text: "Database not available." }] };
+    }
+    try {
+      const paused = db.prepare(`SELECT channel_name FROM channel_subscriptions WHERE paused = 1`).all() as any[];
+      if (paused.length === 0) {
+        return { content: [{ type: "text" as const, text: "No paused subscriptions to resume." }] };
+      }
+      db.run(`UPDATE channel_subscriptions SET paused = 0 WHERE paused = 1`);
+      const names = paused.map((s: any) => s.channel_name);
+      return { content: [{ type: "text" as const, text: `Resumed ${names.length} subscription(s): ${names.join(", ")}` }] };
     } finally {
       db.close();
     }
@@ -564,7 +623,7 @@ async function pollDb() {
     if (!db) continue;
     try {
       // Get subscribed channels
-      const subs = db.prepare("SELECT channel_name FROM channel_subscriptions").all() as any[];
+      const subs = db.prepare("SELECT channel_name FROM channel_subscriptions WHERE paused = 0").all() as any[];
       if (subs.length === 0) continue;
       const subNames = subs.map((s: any) => s.channel_name);
 

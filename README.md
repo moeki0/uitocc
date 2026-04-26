@@ -169,6 +169,8 @@ These tools are available to Claude Code when the MCP server is running:
 | `list_channels()` | List available channels and subscription status |
 | `subscribe(channel)` | Subscribe to a channel for real-time notifications |
 | `unsubscribe(channel)` | Stop receiving from a channel |
+| `pause()` | Pause all subscriptions (remembered for resume) |
+| `resume()` | Resume all paused subscriptions |
 
 ### Screen tools
 
@@ -186,7 +188,14 @@ These tools are available to Claude Code when the MCP server is running:
 
 ## Plugin
 
-tunr includes a Claude Code plugin that auto-invokes when you reference screen or audio content (e.g. "what was I just looking at", "what did they say in the video").
+tunr includes a Claude Code plugin with slash commands for channel management:
+
+| Command | Description |
+|---------|-------------|
+| `/tunr:subscribe <channels>` | Subscribe to channels (e.g. `dev` or `dev,research`) |
+| `/tunr:unsubscribe <channels>` | Unsubscribe from channels |
+| `/tunr:pause` | Pause all subscriptions (remembered for resume) |
+| `/tunr:resume` | Resume paused subscriptions |
 
 ```bash
 /plugin marketplace add moeki0/tunr-skill && /plugin install tunr@tunr

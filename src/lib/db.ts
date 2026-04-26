@@ -34,8 +34,11 @@ try { db.run(`ALTER TABLE channels DROP COLUMN rules`); } catch {}
 
 db.run(`CREATE TABLE IF NOT EXISTS channel_subscriptions (
   channel_name TEXT PRIMARY KEY,
-  subscribed_at TEXT DEFAULT (datetime('now'))
+  subscribed_at TEXT DEFAULT (datetime('now')),
+  paused INTEGER DEFAULT 0
 )`);
+
+try { db.run(`ALTER TABLE channel_subscriptions ADD COLUMN paused INTEGER DEFAULT 0`); } catch {}
 
 await Bun.write(join(AUDIO_DIR, ".keep"), "");
 
