@@ -2,7 +2,6 @@ export interface ChannelRow {
   id: number;
   name: string;
   include_audio: number;
-  rules: string;
 }
 
 export interface WindowInfo {

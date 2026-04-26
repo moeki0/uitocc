@@ -2,7 +2,7 @@ import type { ChannelRow } from "./types";
 import { db } from "./db";
 
 export function getChannels(): ChannelRow[] {
-  return db.prepare(`SELECT id, name, include_audio, rules FROM channels ORDER BY id`).all() as any[];
+  return db.prepare(`SELECT id, name, include_audio FROM channels ORDER BY id`).all() as any[];
 }
 
 export function getActiveSubscriptions(): string[] {

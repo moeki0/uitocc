@@ -304,7 +304,7 @@ function App() {
             // First time seeing this window — record immediately
             const embedding = generateEmbedding(w.texts.join("\n"));
             const channelNamesJson = JSON.stringify(tw.channels);
-            insertStmt.run(new Date().toISOString(), w.pid, w.window_index, w.app, w.title, textsJson, embedding, null, channelNamesJson);
+            insertStmt.run(new Date().toISOString(), w.pid, w.window_index, w.app, w.title, textsJson, embedding, channelNamesJson);
             setRecordCount((c) => c + 1);
             windowState.set(key, { textsJson, lastChangeAt: now, recorded: true });
             continue;
@@ -322,7 +322,7 @@ function App() {
           if (!state.recorded && (now - state.lastChangeAt) >= settleSecRef.current * 1000) {
             const embedding = generateEmbedding(w.texts.join("\n"));
             const channelNamesJson = JSON.stringify(tw.channels);
-            insertStmt.run(new Date().toISOString(), w.pid, w.window_index, w.app, w.title, textsJson, embedding, null, channelNamesJson);
+            insertStmt.run(new Date().toISOString(), w.pid, w.window_index, w.app, w.title, textsJson, embedding, channelNamesJson);
             setRecordCount((c) => c + 1);
             state.recorded = true;
           }

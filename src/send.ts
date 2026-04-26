@@ -45,8 +45,8 @@ const textsJson = JSON.stringify(w.texts);
 const embedding = generateEmbedding(w.texts.join("\n"));
 
 db.prepare(
-  `INSERT INTO screen_states (timestamp, pid, window_index, app, window_title, texts, embedding, screenshot_path, channel_names) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-).run(ts, w.pid, w.window_index, w.app, w.title, textsJson, embedding, null, JSON.stringify(["__send__"]));
+  `INSERT INTO screen_states (timestamp, pid, window_index, app, window_title, texts, embedding, channel_names) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+).run(ts, w.pid, w.window_index, w.app, w.title, textsJson, embedding, JSON.stringify(["__send__"]));
 
 db.close();
 
