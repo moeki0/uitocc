@@ -375,18 +375,35 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       // Try vector search first (prefer diff_embedding, fallback to embedding)
       const queryVec = queryEmbedding(query);
       if (queryVec) {
-        const rows = db.prepare(
-          `SELECT timestamp, app, window_title, texts, diff_text, embedding, diff_embedding, channel_names FROM screen_states
+        const screenRows = db.prepare(
+          `SELECT timestamp, app, window_title, texts, diff_text, embedding, diff_embedding, channel_names, 'screen' as _type FROM screen_states
            WHERE timestamp > ? AND (embedding IS NOT NULL OR diff_embedding IS NOT NULL)${extraWhere}
            ORDER BY timestamp DESC LIMIT 200`
         ).all(since, ...extraParams) as any[];
 
-        if (rows.length > 0) {
-          const scored = rows.map((r) => {
-            // Score against diff_embedding if available, otherwise full embedding
+        // Also search ingested table for vector matches
+        let ingestClauses = "timestamp > ? AND embedding IS NOT NULL";
+        const ingestParams: any[] = [since];
+        if (channelFilter) {
+          ingestClauses += ` AND channel_name = ?`;
+          ingestParams.push(channelFilter);
+        }
+        const ingestedRows = db.prepare(
+          `SELECT timestamp, source, channel_name, text, embedding, 'ingested' as _type FROM ingested
+           WHERE ${ingestClauses} ORDER BY timestamp DESC LIMIT 200`
+        ).all(...ingestParams) as any[];
+
+        const allRows = [...screenRows, ...ingestedRows];
+        if (allRows.length > 0) {
+          const scored = allRows.map((r) => {
             let score = 0;
             let matchType = "full";
-            if (r.diff_embedding) {
+            if (r._type === "ingested") {
+              if (r.embedding) {
+                score = cosineSimilarity(queryVec, blobToFloat64Array(r.embedding));
+                matchType = "ingested";
+              }
+            } else if (r.diff_embedding) {
               const diffEmb = blobToFloat64Array(r.diff_embedding);
               score = cosineSimilarity(queryVec, diffEmb);
               matchType = "diff";
@@ -398,6 +415,10 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
           }).sort((a, b) => b.score - a.score).slice(0, limit);
 
           const result = scored.map((r) => {
+            if (r._type === "ingested") {
+              const ch = r.channel_name ? ` [${r.channel_name}]` : "";
+              return `[${r.timestamp}] ingested:${r.source}${ch} (${r.matchType}: ${r.score.toFixed(3)})\n${r.text}`;
+            }
             let texts: string[];
             try { texts = JSON.parse(r.texts) as string[]; } catch { texts = []; }
             const ch = r.channel_names ? ` [${r.channel_names}]` : "";
@@ -410,17 +431,37 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       }
 
       // Fallback to LIKE search (search in texts and diff_text)
-      const rows = db.prepare(
-        `SELECT timestamp, app, window_title, texts, diff_text, channel_names FROM screen_states
+      const screenRows = db.prepare(
+        `SELECT timestamp, app, window_title, texts, diff_text, channel_names, 'screen' as _type FROM screen_states
          WHERE timestamp > ? AND (app LIKE ? OR window_title LIKE ? OR texts LIKE ? OR diff_text LIKE ?)${extraWhere}
          ORDER BY timestamp DESC LIMIT ?`
       ).all(since, `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, ...extraParams, limit) as any[];
 
+      // Also LIKE search ingested
+      let ingestLikeClauses = "timestamp > ? AND text LIKE ?";
+      const ingestLikeParams: any[] = [since, `%${query}%`];
+      if (channelFilter) {
+        ingestLikeClauses += ` AND channel_name = ?`;
+        ingestLikeParams.push(channelFilter);
+      }
+      const ingestedRows = db.prepare(
+        `SELECT timestamp, source, channel_name, text, 'ingested' as _type FROM ingested
+         WHERE ${ingestLikeClauses} ORDER BY timestamp DESC LIMIT ?`
+      ).all(...ingestLikeParams, limit) as any[];
+
+      const rows = [...screenRows, ...ingestedRows]
+        .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+        .slice(0, limit);
+
       if (rows.length === 0) {
-        return { content: [{ type: "text" as const, text: `No screen history matching "${query}" in the last ${minutes} minutes.` }] };
+        return { content: [{ type: "text" as const, text: `No history matching "${query}" in the last ${minutes} minutes.` }] };
       }
 
       const result = rows.map((r) => {
+        if (r._type === "ingested") {
+          const ch = r.channel_name ? ` [${r.channel_name}]` : "";
+          return `[${r.timestamp}] ingested:${r.source}${ch}\n${r.text}`;
+        }
         let texts: string[];
         try { texts = JSON.parse(r.texts) as string[]; } catch { texts = []; }
         const ch = r.channel_names ? ` [${r.channel_names}]` : "";
@@ -458,22 +499,43 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       }
       const extraWhere = extraClauses.length > 0 ? ` AND ${extraClauses.join(" AND ")}` : "";
 
-      const rows = db.prepare(
-        `SELECT timestamp, app, window_title, texts, channel_names FROM screen_states
+      const screenRows = db.prepare(
+        `SELECT timestamp, app, window_title, texts, channel_names, 'screen' as _type FROM screen_states
          WHERE timestamp > ?${extraWhere}
          ORDER BY timestamp DESC LIMIT ?`
       ).all(since, ...extraParams, limit) as any[];
 
-      if (rows.length === 0) {
+      // Also fetch recent ingested
+      let ingestWhere = "timestamp > ?";
+      const ingestParams: any[] = [since];
+      if (channelFilter) {
+        ingestWhere += ` AND channel_name = ?`;
+        ingestParams.push(channelFilter);
+      }
+      const ingestedRows = db.prepare(
+        `SELECT timestamp, source, channel_name, text, 'ingested' as _type FROM ingested
+         WHERE ${ingestWhere} ORDER BY timestamp DESC LIMIT ?`
+      ).all(...ingestParams, limit) as any[];
+
+      const allRows = [...screenRows, ...ingestedRows]
+        .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+        .slice(0, limit);
+
+      if (allRows.length === 0) {
         return { content: [{ type: "text" as const, text: `No screen history in the last ${minutes} minutes.` }] };
       }
 
       const content: any[] = [];
-      for (const r of rows) {
-        let texts: string[];
-        try { texts = JSON.parse(r.texts) as string[]; } catch { texts = []; }
-        const ch = r.channel_names ? ` [${r.channel_names}]` : "";
-        content.push({ type: "text" as const, text: `[${r.timestamp}] ${r.app} — ${r.window_title}${ch}\n${texts.join("\n")}` });
+      for (const r of allRows) {
+        if (r._type === "ingested") {
+          const ch = r.channel_name ? ` [${r.channel_name}]` : "";
+          content.push({ type: "text" as const, text: `[${r.timestamp}] ingested:${r.source}${ch}\n${r.text}` });
+        } else {
+          let texts: string[];
+          try { texts = JSON.parse(r.texts) as string[]; } catch { texts = []; }
+          const ch = r.channel_names ? ` [${r.channel_names}]` : "";
+          content.push({ type: "text" as const, text: `[${r.timestamp}] ${r.app} — ${r.window_title}${ch}\n${texts.join("\n")}` });
+        }
       }
 
       return { content };
@@ -633,6 +695,7 @@ function makeDiff(oldLines: string[], newLines: string[]): string {
 // Poll DB for new screen/audio records and notify subscribed channels
 let lastScreenId = 0;
 let lastAudioId = 0;
+let lastIngestedId = 0;
 // Track last notified content per window (keyed by "app\0window_title")
 const lastNotified = new Map<string, { title: string; lines: string[] }>();
 // Track content hash per window per channel — skip duplicate notifications
@@ -653,8 +716,10 @@ async function pollDb() {
     try {
       const s = initDb.prepare("SELECT MAX(id) as m FROM screen_states").get() as any;
       const a = initDb.prepare("SELECT MAX(id) as m FROM audio_transcripts").get() as any;
+      const ig = initDb.prepare("SELECT MAX(id) as m FROM ingested").get() as any;
       lastScreenId = s?.m || 0;
       lastAudioId = a?.m || 0;
+      lastIngestedId = ig?.m || 0;
     } finally {
       initDb.close();
     }
@@ -672,8 +737,10 @@ async function pollDb() {
         // Advance cursors so paused period is skipped on resume
         const maxScreen = db.prepare("SELECT MAX(id) as m FROM screen_states").get() as any;
         const maxAudio = db.prepare("SELECT MAX(id) as m FROM audio_transcripts").get() as any;
+        const maxIngested = db.prepare("SELECT MAX(id) as m FROM ingested").get() as any;
         if (maxScreen?.m) lastScreenId = maxScreen.m;
         if (maxAudio?.m) lastAudioId = maxAudio.m;
+        if (maxIngested?.m) lastIngestedId = maxIngested.m;
         continue;
       }
 
@@ -757,6 +824,26 @@ async function pollDb() {
             },
           });
         }
+      }
+
+      // New ingested records
+      const ingested = db.prepare(
+        "SELECT id, timestamp, source, channel_name, text, meta FROM ingested WHERE id > ? ORDER BY id"
+      ).all(lastIngestedId) as any[];
+
+      for (const r of ingested) {
+        lastIngestedId = r.id;
+        if (!r.channel_name) continue;
+        if (!subNames.includes(r.channel_name)) continue;
+
+        const metaStr = r.meta ? ` ${r.meta}` : "";
+        await mcp.notification({
+          method: "notifications/claude/channel",
+          params: {
+            content: `[${r.channel_name}] Ingested (${r.source})${metaStr}:\n${r.text}`,
+            meta: { source: "tunr", event: "ingested", channel: r.channel_name, timestamp: r.timestamp },
+          },
+        });
       }
     } finally {
       db.close();
