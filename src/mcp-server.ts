@@ -703,5 +703,11 @@ async function pollDb() {
   }
 }
 
+// Clear stale subscriptions from previous sessions
+const initDb = openDbWritable();
+if (initDb) {
+  try { initDb.run("DELETE FROM channel_subscriptions"); } finally { initDb.close(); }
+}
+
 await mcp.connect(new StdioServerTransport());
 pollDb();
