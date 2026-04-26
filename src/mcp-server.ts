@@ -635,6 +635,16 @@ let lastScreenId = 0;
 let lastAudioId = 0;
 // Track last notified content per window (keyed by "app\0window_title")
 const lastNotified = new Map<string, { title: string; lines: string[] }>();
+// Track content hash per window per channel — skip duplicate notifications
+const sentHashes = new Map<string, Map<string, number>>();
+
+function hashLines(lines: string[]): number {
+  const hasher = new Bun.CryptoHasher("md5");
+  hasher.update(lines.join("\n"));
+  // Use first 8 bytes as a number for cheap comparison
+  const buf = hasher.digest();
+  return buf[0] | (buf[1] << 8) | (buf[2] << 16) | (buf[3] << 24);
+}
 
 async function pollDb() {
   // Initialize cursors to latest IDs
@@ -676,7 +686,10 @@ async function pollDb() {
         lastScreenId = r.id;
         let chans: string[];
         try { chans = r.channel_names ? JSON.parse(r.channel_names) : []; } catch { chans = []; }
-        const matched = chans.filter(ch => subNames.includes(ch));
+        const isUserSend = chans.includes("__send__");
+        const matched = isUserSend
+          ? subNames  // user_send → notify all subscribed channels
+          : chans.filter(ch => subNames.includes(ch));
         if (matched.length === 0) continue;
 
         let texts: string[];
@@ -684,6 +697,7 @@ async function pollDb() {
         const lines = texts.join("\n").split("\n");
         const wKey = r.window_id ? `wid:${r.window_id}` : `${r.pid}:${r.window_index}`;
         const prev = lastNotified.get(wKey);
+        const contentHash = hashLines(lines);
 
         let content: string;
         if (!prev || prev.title !== r.window_title) {
@@ -696,12 +710,24 @@ async function pollDb() {
         }
         lastNotified.set(wKey, { title: r.window_title, lines });
 
+        const event = isUserSend ? "user_send" : "screen";
+
         for (const ch of matched) {
+          // Skip if same content was already sent for this window+channel (unless user_send)
+          if (!isUserSend) {
+            const chHashes = sentHashes.get(ch);
+            if (chHashes?.get(wKey) === contentHash) continue;
+          }
+          // Update hash
+          let chHashes = sentHashes.get(ch);
+          if (!chHashes) { chHashes = new Map(); sentHashes.set(ch, chHashes); }
+          chHashes.set(wKey, contentHash);
+
           await mcp.notification({
             method: "notifications/claude/channel",
             params: {
               content: `[${ch}] Screen update:\n\n${content}`,
-              meta: { source: "tunr", event: "screen", channel: ch, timestamp: r.timestamp },
+              meta: { source: "tunr", event, channel: ch, timestamp: r.timestamp },
             },
           });
         }
