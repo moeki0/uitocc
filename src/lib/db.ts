@@ -73,6 +73,7 @@ db.run(`CREATE TABLE IF NOT EXISTS ingested (
 )`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_ingested_timestamp ON ingested(timestamp)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_ingested_source ON ingested(source)`);
+db.run(`CREATE INDEX IF NOT EXISTS idx_ingested_channel ON ingested(channel_name)`);
 
 export const insertIngestedStmt = db.prepare(
   `INSERT INTO ingested (timestamp, source, channel_name, text, meta, embedding) VALUES (?, ?, ?, ?, ?, ?)`

@@ -7,8 +7,7 @@
  */
 
 import { insertIngestedStmt } from "./lib/db";
-import { existsSync } from "fs";
-import { join, dirname } from "path";
+import { generateEmbedding } from "./lib/capture";
 
 // Parse args
 const args = process.argv.slice(3);
@@ -52,27 +51,8 @@ if (!text) {
   process.exit(1);
 }
 
-// Generate embedding
-const EMBED_PATH = join(dirname(process.execPath), "tunr-embed");
-const EMBED_FALLBACK = join(import.meta.dir, "..", "tunr-embed");
-const embedBin = existsSync(EMBED_PATH) ? EMBED_PATH : EMBED_FALLBACK;
-
-let embedding: Buffer | null = null;
-try {
-  const proc = Bun.spawnSync([embedBin], {
-    stdin: new TextEncoder().encode(text.slice(0, 2000)),
-    stderr: "pipe",
-  });
-  if (proc.exitCode === 0) {
-    const vec: number[] = JSON.parse(proc.stdout.toString().trim());
-    const buf = Buffer.alloc(vec.length * 8);
-    const view = new DataView(buf.buffer);
-    for (let i = 0; i < vec.length; i++) {
-      view.setFloat64(i * 8, vec[i], false); // big-endian, matching existing code
-    }
-    embedding = buf;
-  }
-} catch {}
+// Generate embedding (reuse shared helper, truncate to 2000 chars)
+const embedding = generateEmbedding(text.slice(0, 2000));
 
 const timestamp = new Date().toISOString();
 const metaJson = Object.keys(meta).length > 0 ? JSON.stringify(meta) : null;

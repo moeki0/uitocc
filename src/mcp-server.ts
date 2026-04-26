@@ -126,7 +126,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "search_screen_history",
       description:
-        "Search the user's screen history for text content. Returns matching screen states from the observation daemon.",
+        "Search the user's screen and ingested history for text content. Returns matching screen states and ingested records.",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -157,7 +157,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "recent_screens",
       description:
-        "Get the most recent screen states observed by the daemon. Shows what the user has been looking at recently.",
+        "Get the most recent screen states and ingested records. Shows what the user has been looking at and data piped via tunr ingest.",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -381,17 +381,20 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
            ORDER BY timestamp DESC LIMIT 200`
         ).all(since, ...extraParams) as any[];
 
-        // Also search ingested table for vector matches
-        let ingestClauses = "timestamp > ? AND embedding IS NOT NULL";
-        const ingestParams: any[] = [since];
-        if (channelFilter) {
-          ingestClauses += ` AND channel_name = ?`;
-          ingestParams.push(channelFilter);
+        // Also search ingested table for vector matches (skip when appFilter is set — ingested has no app)
+        let ingestedRows: any[] = [];
+        if (!appFilter) {
+          let ingestClauses = "timestamp > ? AND embedding IS NOT NULL";
+          const ingestParams: any[] = [since];
+          if (channelFilter) {
+            ingestClauses += ` AND channel_name = ?`;
+            ingestParams.push(channelFilter);
+          }
+          ingestedRows = db.prepare(
+            `SELECT timestamp, source, channel_name, text, embedding, 'ingested' as _type FROM ingested
+             WHERE ${ingestClauses} ORDER BY timestamp DESC LIMIT 200`
+          ).all(...ingestParams) as any[];
         }
-        const ingestedRows = db.prepare(
-          `SELECT timestamp, source, channel_name, text, embedding, 'ingested' as _type FROM ingested
-           WHERE ${ingestClauses} ORDER BY timestamp DESC LIMIT 200`
-        ).all(...ingestParams) as any[];
 
         const allRows = [...screenRows, ...ingestedRows];
         if (allRows.length > 0) {
@@ -437,17 +440,20 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
          ORDER BY timestamp DESC LIMIT ?`
       ).all(since, `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, ...extraParams, limit) as any[];
 
-      // Also LIKE search ingested
-      let ingestLikeClauses = "timestamp > ? AND text LIKE ?";
-      const ingestLikeParams: any[] = [since, `%${query}%`];
-      if (channelFilter) {
-        ingestLikeClauses += ` AND channel_name = ?`;
-        ingestLikeParams.push(channelFilter);
+      // Also LIKE search ingested (skip when appFilter is set — ingested has no app)
+      let ingestedRows: any[] = [];
+      if (!appFilter) {
+        let ingestLikeClauses = "timestamp > ? AND text LIKE ?";
+        const ingestLikeParams: any[] = [since, `%${query}%`];
+        if (channelFilter) {
+          ingestLikeClauses += ` AND channel_name = ?`;
+          ingestLikeParams.push(channelFilter);
+        }
+        ingestedRows = db.prepare(
+          `SELECT timestamp, source, channel_name, text, 'ingested' as _type FROM ingested
+           WHERE ${ingestLikeClauses} ORDER BY timestamp DESC LIMIT ?`
+        ).all(...ingestLikeParams, limit) as any[];
       }
-      const ingestedRows = db.prepare(
-        `SELECT timestamp, source, channel_name, text, 'ingested' as _type FROM ingested
-         WHERE ${ingestLikeClauses} ORDER BY timestamp DESC LIMIT ?`
-      ).all(...ingestLikeParams, limit) as any[];
 
       const rows = [...screenRows, ...ingestedRows]
         .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
@@ -505,17 +511,20 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
          ORDER BY timestamp DESC LIMIT ?`
       ).all(since, ...extraParams, limit) as any[];
 
-      // Also fetch recent ingested
-      let ingestWhere = "timestamp > ?";
-      const ingestParams: any[] = [since];
-      if (channelFilter) {
-        ingestWhere += ` AND channel_name = ?`;
-        ingestParams.push(channelFilter);
+      // Also fetch recent ingested (skip when appFilter is set — ingested has no app)
+      let ingestedRows: any[] = [];
+      if (!appFilter) {
+        let ingestWhere = "timestamp > ?";
+        const ingestParams: any[] = [since];
+        if (channelFilter) {
+          ingestWhere += ` AND channel_name = ?`;
+          ingestParams.push(channelFilter);
+        }
+        ingestedRows = db.prepare(
+          `SELECT timestamp, source, channel_name, text, 'ingested' as _type FROM ingested
+           WHERE ${ingestWhere} ORDER BY timestamp DESC LIMIT ?`
+        ).all(...ingestParams, limit) as any[];
       }
-      const ingestedRows = db.prepare(
-        `SELECT timestamp, source, channel_name, text, 'ingested' as _type FROM ingested
-         WHERE ${ingestWhere} ORDER BY timestamp DESC LIMIT ?`
-      ).all(...ingestParams, limit) as any[];
 
       const allRows = [...screenRows, ...ingestedRows]
         .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
