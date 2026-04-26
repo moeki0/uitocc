@@ -10,7 +10,8 @@ tunr captures your macOS screen and system audio, then delivers it to Claude Cod
 - **Audio capture** (optional) — System audio via BlackHole + local transcription with whisper.cpp
 - **Channels** — Group windows into named channels, subscribe from Claude Code for real-time updates
 - **Deny list** — Glob-based rules to block specific apps, titles, or URLs from ever being captured
-- **Search** — Vector similarity search and keyword search over screen and audio history
+- **Ingest** — Pipe arbitrary text from external sources (git hooks, shell history, RSS, etc.) via `tunr ingest`
+- **Search** — Vector similarity search and keyword search over screen, audio, and ingested history
 - **Privacy-first** — All data stays local in SQLite. Only assigned windows are captured. Deny list rules override all channel assignments. No data leaves your machine unless Claude Code reads it
 
 ## Install
@@ -148,6 +149,48 @@ Block specific apps, window titles, or URLs from ever being captured. Rules use 
 
 Examples: `app: 1Password`, `url: *mail.google.com*`, `app: Google Chrome` + `url: *private*`
 
+### Ingest (pipe external data)
+
+Pipe arbitrary text into tunr from any source:
+
+```bash
+echo "some text" | tunr ingest --source <name> [--channel <name>] [--meta key=value]
+```
+
+Ingested data is stored with embeddings and becomes searchable alongside screen and audio history via MCP tools.
+
+#### Examples
+
+```bash
+# Git post-commit hook — record every commit
+git log -1 --stat --format="%h %s%n%n%b" | tunr ingest --source git --meta "repo=$(basename $(git rev-parse --show-toplevel))"
+
+# Shell command output
+kubectl get pods | tunr ingest --source kubectl --channel dev
+
+# Pipe anything
+curl -s https://example.com/api | tunr ingest --source api --meta "endpoint=/api"
+```
+
+#### Global git hook
+
+To automatically record all commits across all repos:
+
+```bash
+# Create global hooks directory
+mkdir -p ~/.config/git/hooks
+
+# Create post-commit hook
+cat > ~/.config/git/hooks/post-commit << 'HOOK'
+#!/bin/sh
+git log -1 --stat --format="%h %s%n%n%b" | tunr ingest --source git --meta "repo=$(basename $(git rev-parse --show-toplevel))"
+HOOK
+chmod +x ~/.config/git/hooks/post-commit
+
+# Set global hooks path
+git config --global core.hooksPath ~/.config/git/hooks
+```
+
 ### Send (one-shot)
 
 Capture the frontmost window and send it to Claude Code instantly:
@@ -176,8 +219,8 @@ These tools are available to Claude Code when the MCP server is running:
 
 | Tool | Description |
 |------|-------------|
-| `search_screen_history(query, channel?, app?, minutes?, limit?)` | Search screen text (vector similarity + keyword fallback) |
-| `recent_screens(channel?, app?, minutes?, limit?)` | Get recent screen states |
+| `search_screen_history(query, channel?, app?, minutes?, limit?)` | Search screen and ingested text (vector similarity + keyword fallback) |
+| `recent_screens(channel?, app?, minutes?, limit?)` | Get recent screen states and ingested records |
 | `page_history(title, minutes?, limit?)` | Change history of a page (initial capture + diffs) |
 
 ### Audio tools
@@ -235,6 +278,9 @@ tunr includes a Claude Code plugin with slash commands for channel management:
 
 tunr send ──────────────────────▶  SQLite (direct write)
   (one-shot, AX API)
+
+echo | tunr ingest ─────────────▶  SQLite (direct write)
+  (stdin, any source)
 ```
 
 ### Components
@@ -243,7 +289,8 @@ tunr send ──────────────────────▶ 
 |------|-------------|
 | `daemon.tsx` | TUI daemon (Ink/React). Polls windows, manual channel assignment, records to SQLite, manages audio capture |
 | `mcp-server.ts` | MCP server. Provides search/history tools and channel event polling |
-| `cli.ts` | CLI entry point (`start`, `mcp`, `send`, `--version`) |
+| `cli.ts` | CLI entry point (`start`, `mcp`, `send`, `ingest`, `--version`) |
+| `ingest.ts` | Stdin ingestion. Reads text, generates embedding, writes to `ingested` table |
 | `ax_text.swift` | Accessibility API text extractor. `--all` returns all windows as JSON with URLs for browser tabs. Uses AppleScript JS for Chrome web content |
 | `send.ts` | One-shot screen capture. Reads frontmost window via ax_text and writes directly to DB |
 | `embed.swift` | NLEmbedding (macOS NaturalLanguage framework) for 512-dim sentence embeddings used in vector search |
@@ -253,7 +300,7 @@ tunr send ──────────────────────▶ 
 
 All data is stored locally at `~/Library/Application Support/tunr/`:
 
-- `tunr.db` — SQLite database with screen states and audio transcripts
+- `tunr.db` — SQLite database with screen states, audio transcripts, and ingested records
 - `settings.json` — Recording settings, deny list rules
 
 ## License
