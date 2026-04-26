@@ -151,6 +151,35 @@ export function getRecentCaptures(
     }
   }
 
+  if (typeFilter.length === 0 || typeFilter.includes("ingested")) {
+    let sql = `SELECT id, timestamp, source, channel_name, text FROM ingested WHERE timestamp > ?`;
+    const params: any[] = [since];
+    if (channelFilter.length > 0) {
+      sql += ` AND (${channelFilter.map(() => `channel_name = ?`).join(" OR ")})`;
+      for (const ch of channelFilter) params.push(ch);
+    }
+    if (query) {
+      sql += ` AND (source LIKE ? OR text LIKE ?)`;
+      params.push(`%${query}%`, `%${query}%`);
+    }
+    sql += ` ORDER BY timestamp DESC LIMIT ?`;
+    params.push(limit);
+
+    const rows = db.prepare(sql).all(...params) as any[];
+    for (const r of rows) {
+      captures.push({
+        id: `i${r.id}`,
+        timestamp: r.timestamp,
+        type: "ingested",
+        app: `ingested:${r.source}`,
+        title: r.source,
+        excerpt: r.text.slice(0, 80),
+        fullText: r.text,
+        channels: r.channel_name ? [r.channel_name] : [],
+      });
+    }
+  }
+
   captures.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   return captures.slice(0, limit);
 }
@@ -165,8 +194,13 @@ export function getDailyCounts(weeks: number = 16): DayCount[] {
     `SELECT date(timestamp, 'localtime') as d, count(*) as c FROM audio_transcripts WHERE date(timestamp, 'localtime') >= ? GROUP BY d`
   ).all(since) as { d: string; c: number }[];
 
+  const ingestedRows = db.prepare(
+    `SELECT date(timestamp, 'localtime') as d, count(*) as c FROM ingested WHERE date(timestamp, 'localtime') >= ? GROUP BY d`
+  ).all(since) as { d: string; c: number }[];
+
   const screenMap = new Map(screenRows.map(r => [r.d, r.c]));
   const audioMap = new Map(audioRows.map(r => [r.d, r.c]));
+  const ingestedMap = new Map(ingestedRows.map(r => [r.d, r.c]));
 
   const result: DayCount[] = [];
   const startDate = new Date();
@@ -178,7 +212,8 @@ export function getDailyCounts(weeks: number = 16): DayCount[] {
     const ds = localDateStr(d);
     const s = screenMap.get(ds) || 0;
     const a = audioMap.get(ds) || 0;
-    result.push({ date: ds, screen: s, audio: a, total: s + a });
+    const ig = ingestedMap.get(ds) || 0;
+    result.push({ date: ds, screen: s, audio: a, total: s + a + ig });
   }
   return result;
 }
@@ -190,9 +225,13 @@ export function getHourlyCountsForDate(date: string): { hour: number; count: num
   const audioRows = db.prepare(
     `SELECT cast(strftime('%H', timestamp, 'localtime') as integer) as h, count(*) as c FROM audio_transcripts WHERE date(timestamp, 'localtime') = ? GROUP BY h`
   ).all(date) as { h: number; c: number }[];
+  const ingestedRows = db.prepare(
+    `SELECT cast(strftime('%H', timestamp, 'localtime') as integer) as h, count(*) as c FROM ingested WHERE date(timestamp, 'localtime') = ? GROUP BY h`
+  ).all(date) as { h: number; c: number }[];
   const map = new Map<number, number>();
   for (const r of rows) map.set(r.h, (map.get(r.h) || 0) + r.c);
   for (const r of audioRows) map.set(r.h, (map.get(r.h) || 0) + r.c);
+  for (const r of ingestedRows) map.set(r.h, (map.get(r.h) || 0) + r.c);
   return Array.from({ length: 24 }, (_, i) => ({ hour: i, count: map.get(i) || 0 }));
 }
 
@@ -211,6 +250,12 @@ export function getCapturesForDate(date: string, limit: number = 200): Capture[]
   ).all(date, limit) as any[];
   for (const r of audioRows) {
     captures.push({ id: `a${r.id}`, timestamp: r.timestamp, type: "audio", app: "Audio", title: "whisper", excerpt: r.transcript.slice(0, 80), fullText: r.transcript, channels: [] });
+  }
+  const ingestedRows = db.prepare(
+    `SELECT id, timestamp, source, channel_name, text FROM ingested WHERE date(timestamp, 'localtime') = ? ORDER BY timestamp DESC LIMIT ?`
+  ).all(date, limit) as any[];
+  for (const r of ingestedRows) {
+    captures.push({ id: `i${r.id}`, timestamp: r.timestamp, type: "ingested", app: `ingested:${r.source}`, title: r.source, excerpt: r.text.slice(0, 80), fullText: r.text, channels: r.channel_name ? [r.channel_name] : [] });
   }
   captures.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   return captures.slice(0, limit);

@@ -14,6 +14,24 @@ import { existsSync } from "fs";
 const DATA_DIR = join(homedir(), "Library", "Application Support", "tunr");
 const DB_PATH = join(DATA_DIR, "tunr.db");
 
+// Ensure ingested table exists (may not exist if tunr ingest was never run)
+try {
+  if (existsSync(DB_PATH)) {
+    const initDb = new Database(DB_PATH);
+    initDb.run(`CREATE TABLE IF NOT EXISTS ingested (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp TEXT NOT NULL,
+      source TEXT NOT NULL,
+      channel_name TEXT,
+      text TEXT NOT NULL,
+      meta TEXT,
+      embedding BLOB,
+      created_at TEXT DEFAULT (datetime('now'))
+    )`);
+    initDb.close();
+  }
+} catch {}
+
 function openDb(): Database | null {
   try {
     if (!existsSync(DB_PATH)) return null;
