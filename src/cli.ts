@@ -15,6 +15,7 @@ switch (command) {
   case "mcp":
     await import("./mcp-server.ts");
     break;
+  case "capture":
   case "send":
     await import("./send.ts");
     break;
@@ -55,7 +56,7 @@ switch (command) {
 Usage:
   tunr start         Start the watch daemon with TUI
   tunr mcp           Start the MCP server
-  tunr send          Send current screen to Claude Code
+  tunr capture       Capture the focused window into tunr (also: tunr send)
   tunr ingest        Ingest text from stdin into tunr
   tunr setup         Set up permissions and MCP registration
   tunr setup --audio Set up audio capture

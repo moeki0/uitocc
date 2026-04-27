@@ -341,23 +341,25 @@ launchctl load ~/Library/LaunchAgents/com.you.tunr-github-poll.plist
 
 Requires `gh auth login` (uses your existing GitHub CLI auth). The since cursor at `~/.cache/tunr-github-since` ensures no duplicate ingestion.
 
-### Send (one-shot)
+### Capture (one-shot)
 
-Capture the frontmost window and send it to Claude Code instantly:
+Capture the focused window into tunr's DB so subscribed Claude Code sessions see it:
 
 ```bash
-tunr send
+tunr capture
 ```
 
 Add `--image` (or `-i`) to also save a screenshot of that window. The image lives at `<DATA_DIR>/screenshots/<timestamp>.png` and its path is stored on the record:
 
 ```bash
-tunr send --image
+tunr capture --image
 ```
 
 Manual-only by design — keep the auto-recording loop text-driven, and use `--image` when GUI nuance or atmosphere matters (UI bug, dashboard layout, design review).
 
 Bind these to a keyboard shortcut (e.g. via Raycast or macOS Shortcuts) for quick screen sharing.
+
+> `tunr send` continues to work as an alias for `tunr capture`.
 
 ### Export / Import
 
