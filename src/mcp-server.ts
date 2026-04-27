@@ -731,7 +731,7 @@ async function pollDb() {
 
       // New screen records
       const screens = db.prepare(
-        "SELECT id, timestamp, pid, window_index, window_id, app, window_title, texts, channel_names FROM screen_states WHERE id > ? ORDER BY id"
+        "SELECT id, timestamp, pid, window_index, window_id, app, window_title, texts, channel_names, screenshot_path FROM screen_states WHERE id > ? ORDER BY id"
       ).all(lastScreenId) as any[];
 
       for (const r of screens) {
@@ -760,6 +760,9 @@ async function pollDb() {
           const diff = makeDiff(prev.lines, lines);
           content = `**${r.app}** — "${r.window_title}"\n${diff}`;
         }
+        if (r.screenshot_path) {
+          content += `\n[screenshot: ${r.screenshot_path}]`;
+        }
         lastNotified.set(wKey, { title: r.window_title, lines });
 
         const event = isUserSend ? "user_send" : "screen";
@@ -777,11 +780,14 @@ async function pollDb() {
           if (!chHashes) { chHashes = new Map(); sentHashes.set(ch, chHashes); }
           chHashes.set(hashKey, contentHash);
 
+          const meta: any = { source: "tunr", event, channel: ch, timestamp: r.timestamp };
+          if (r.screenshot_path) meta.screenshot_path = r.screenshot_path;
+
           await mcp.notification({
             method: "notifications/claude/channel",
             params: {
               content: `[${ch}] Screen update:\n\n${content}`,
-              meta: { source: "tunr", event, channel: ch, timestamp: r.timestamp },
+              meta,
             },
           });
         }
