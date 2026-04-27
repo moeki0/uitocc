@@ -178,7 +178,7 @@ function App() {
     for (const ch of allChans) {
       const shouldInclude = audioChans.includes(ch.name) ? 1 : 0;
       if (ch.include_audio !== shouldInclude) {
-        db.run(`UPDATE channels SET include_audio = ? WHERE name = ?`, shouldInclude, ch.name);
+        db.run(`UPDATE channels SET include_audio = ? WHERE name = ?`, [shouldInclude, ch.name]);
       }
     }
   }, [audioSource?.channels.join(",")]);
@@ -190,7 +190,7 @@ function App() {
     for (const ch of allChans) {
       const shouldInclude = micChans.includes(ch.name) ? 1 : 0;
       if (ch.include_mic !== shouldInclude) {
-        db.run(`UPDATE channels SET include_mic = ? WHERE name = ?`, shouldInclude, ch.name);
+        db.run(`UPDATE channels SET include_mic = ? WHERE name = ?`, [shouldInclude, ch.name]);
       }
     }
   }, [micSource?.channels.join(",")]);
@@ -670,7 +670,7 @@ function App() {
         const chList = getChannels();
         if (input === "c" || input === "C") { setChannelCreateMode(true); setNewChannelName(""); return; }
         if ((input === "x" || input === "X") && settingsIndex < chList.length) {
-          db.run(`DELETE FROM channels WHERE id = ?`, chList[settingsIndex].id);
+          db.run(`DELETE FROM channels WHERE id = ?`, [chList[settingsIndex].id]);
           setChannels(getChannels());
           return;
         }
@@ -1032,7 +1032,7 @@ function App() {
                   {settingsIndex === 2 ? "▸" : " "} Audio chunk: {audioChunkSec}s  [[ ]] adjust
                 </Text>
               </Box>
-              <Text color="gray" bold dimColor marginTop={1}>STORAGE</Text>
+              <Box marginTop={1}><Text color="gray" bold dimColor>STORAGE</Text></Box>
               <Box paddingLeft={1}>
                 <Text color={settingsIndex === 3 ? "magenta" : "white"}>
                   {settingsIndex === 3 ? "▸" : " "} {deleteConfirm ? <Text color="red" bold>Press Enter to confirm DELETE ALL</Text> : "Delete all captures  [Enter]"}
@@ -1054,7 +1054,7 @@ function App() {
                     onChange={setNewChannelName}
                     onSubmit={(val: string) => {
                       const name = val.trim().replace(/[^a-zA-Z0-9_\-]/g, "").slice(0, 32);
-                      if (name) { try { db.run(`INSERT INTO channels (name) VALUES (?)`, name); } catch {} setChannels(getChannels()); }
+                      if (name) { try { db.run(`INSERT INTO channels (name) VALUES (?)`, [name]); } catch {} setChannels(getChannels()); }
                       setChannelCreateMode(false); setNewChannelName("");
                     }}
                   />
