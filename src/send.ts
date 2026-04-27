@@ -50,9 +50,11 @@ const embedding = generateEmbedding(w.texts.join("\n"));
 let screenshotPath: string | null = null;
 if (wantImage && w.window_id) {
   const safeTs = ts.replace(/[:.]/g, "-");
-  const out = join(SCREENSHOT_DIR, `${safeTs}.png`);
+  // JPEG instead of PNG: ~5-10x smaller, text remains readable.
+  // -o omits the macOS window shadow padding (also smaller frame).
+  const out = join(SCREENSHOT_DIR, `${safeTs}.jpg`);
   const cap = Bun.spawnSync(
-    ["screencapture", "-x", "-l", String(w.window_id), out],
+    ["screencapture", "-x", "-o", "-t", "jpg", "-l", String(w.window_id), out],
     { stderr: "pipe" }
   );
   if (cap.exitCode === 0 && await Bun.file(out).exists()) {
