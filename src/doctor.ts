@@ -100,7 +100,7 @@ function checkWhisperModel(): boolean {
 // Check whisper-cpp binary
 function checkWhisperBin(): boolean {
   try {
-    const proc = Bun.spawnSync(["which", "whisper-cpp"], { stderr: "pipe" });
+    const proc = Bun.spawnSync(["which", "whisper-cli"], { stderr: "pipe" });
     return proc.exitCode === 0;
   } catch {
     return false;

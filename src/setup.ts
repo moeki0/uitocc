@@ -141,7 +141,7 @@ export async function runSetup(args: string[]) {
     }
 
     // whisper-cpp
-    const whisperBin = Bun.spawnSync(["which", "whisper-cpp"], { stderr: "pipe" });
+    const whisperBin = Bun.spawnSync(["which", "whisper-cli"], { stderr: "pipe" });
     if (whisperBin.exitCode === 0) {
       ok("whisper-cpp installed");
     } else {
