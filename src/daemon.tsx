@@ -18,38 +18,8 @@ import { db, insertStmt, insertAudioStmt, localDateStr, getRecentCaptures, getDa
 import { getChannels, getActiveSubscriptions } from "./lib/rules";
 import { generateEmbedding, getAllWindows, windowKey } from "./lib/capture";
 import { checkForUpdate } from "./lib/update-check";
-
-// Glob match: * matches any sequence of characters (linear scan, no regex)
-function globMatch(pattern: string, value: string): boolean {
-  const parts = pattern.split("*");
-  if (parts.length === 1) return pattern === value;
-
-  // First part must match at the start
-  if (!value.startsWith(parts[0])) return false;
-  let pos = parts[0].length;
-
-  // Middle parts must appear in order
-  for (let i = 1; i < parts.length - 1; i++) {
-    const idx = value.indexOf(parts[i], pos);
-    if (idx === -1) return false;
-    pos = idx + parts[i].length;
-  }
-
-  // Last part must match at the end
-  const last = parts[parts.length - 1];
-  return value.length - pos >= last.length && value.endsWith(last);
-}
-
-function isDenied(denyRules: DenyRule[], app: string, title: string, urls: string[]): boolean {
-  return denyRules.some(rule => {
-    // All specified fields must match (AND logic)
-    if (rule.app && !globMatch(rule.app, app)) return false;
-    if (rule.title && !globMatch(rule.title, title)) return false;
-    if (rule.url && !urls.some(u => globMatch(rule.url!, u))) return false;
-    // At least one field must be specified
-    return !!(rule.app || rule.title || rule.url);
-  });
-}
+import { isDenied } from "./lib/deny";
+import { computeDiffLines } from "./lib/diff";
 
 // ===== TUI =====
 
@@ -337,25 +307,6 @@ function App() {
     const windowState = new Map<string, { textsJson: string; lastChangeAt: number; recorded: boolean }>();
     // Per-page (window_id + title) last recorded texts for diff computation
     const lastRecordedTexts = new Map<string, string[]>();
-
-    function computeDiffLines(oldLines: string[], newLines: string[]): string[] {
-      const m = oldLines.length, n = newLines.length;
-      const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
-      for (let i = 1; i <= m; i++) {
-        for (let j = 1; j <= n; j++) {
-          dp[i][j] = oldLines[i - 1] === newLines[j - 1] ? dp[i - 1][j - 1] + 1 : Math.max(dp[i - 1][j], dp[i][j - 1]);
-        }
-      }
-      const changed: string[] = [];
-      let i = m, j = n;
-      while (i > 0 || j > 0) {
-        if (i > 0 && j > 0 && oldLines[i - 1] === newLines[j - 1]) { i--; j--; }
-        else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) { changed.push(newLines[j - 1]); j--; }
-        else { i--; }
-      }
-      changed.reverse();
-      return changed;
-    }
 
     async function record() {
       while (active) {
