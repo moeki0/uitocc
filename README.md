@@ -349,7 +349,38 @@ Capture the frontmost window and send it to Claude Code instantly:
 tunr send
 ```
 
-Bind this to a keyboard shortcut (e.g. via Raycast or macOS Shortcuts) for quick screen sharing.
+Add `--image` (or `-i`) to also save a screenshot of that window. The image lives at `<DATA_DIR>/screenshots/<timestamp>.png` and its path is stored on the record:
+
+```bash
+tunr send --image
+```
+
+Manual-only by design — keep the auto-recording loop text-driven, and use `--image` when GUI nuance or atmosphere matters (UI bug, dashboard layout, design review).
+
+Bind these to a keyboard shortcut (e.g. via Raycast or macOS Shortcuts) for quick screen sharing.
+
+### Export / Import
+
+Move captures between machines, or archive a day's worth of context:
+
+```bash
+# Export today's captures (default: tar.gz bundling data.jsonl + screenshots/)
+tunr export --date today
+
+# Export an arbitrary day
+tunr export --date 2026-04-27
+
+# Custom range / channel filter
+tunr export --since 2026-04-01 --until 2026-04-07 --channel dev
+```
+
+The default output is `tunr-export-<date>.tar.gz`. Pass `--out path.jsonl.gz` for the legacy single-file format (no screenshots).
+
+```bash
+tunr import tunr-export-2026-04-27.tar.gz
+```
+
+Imports are **idempotent** — re-importing the same archive (or merging archives from another machine) won't duplicate rows. UNIQUE constraints on `(timestamp, pid, window_id, window_title)` and friends drop the duplicates silently. Screenshots from a `.tar.gz` archive are copied into the local `<DATA_DIR>/screenshots/` and paths rewritten to local absolute paths.
 
 ## MCP Tools
 
