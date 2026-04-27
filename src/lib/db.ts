@@ -26,6 +26,7 @@ try { db.run(`ALTER TABLE screen_states ADD COLUMN channel_names TEXT`); } catch
 try { db.run(`ALTER TABLE screen_states ADD COLUMN window_id INTEGER DEFAULT 0`); } catch {}
 try { db.run(`ALTER TABLE screen_states ADD COLUMN diff_text TEXT`); } catch {}
 try { db.run(`ALTER TABLE screen_states ADD COLUMN diff_embedding BLOB`); } catch {}
+try { db.run(`ALTER TABLE screen_states ADD COLUMN screenshot_path TEXT`); } catch {}
 try { db.run(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_screen_states ON screen_states(timestamp, pid, window_id, window_title)`); } catch {}
 
 db.run(`CREATE TABLE IF NOT EXISTS channels (

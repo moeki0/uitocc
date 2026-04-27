@@ -4,6 +4,7 @@ import { homedir } from "os";
 export const DATA_DIR = process.env.TUNR_DATA_DIR || join(homedir(), "Library", "Application Support", "tunr");
 export const DB_PATH = process.env.TUNR_DB_PATH || join(DATA_DIR, "tunr.db");
 export const AUDIO_DIR = join(DATA_DIR, "audio");
+export const SCREENSHOT_DIR = join(DATA_DIR, "screenshots");
 export const SETTINGS_PATH = join(DATA_DIR, "settings.json");
 
 export const VERSION = "1.19.0";
