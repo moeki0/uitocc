@@ -7,7 +7,7 @@
  */
 
 import { insertIngestedStmt } from "./lib/db";
-import { generateEmbedding } from "./lib/capture";
+import { generateEmbeddingSync as generateEmbedding } from "./lib/capture";
 import { parseIngestArgs } from "./lib/ingest-args";
 
 const { source, channel, meta } = parseIngestArgs(process.argv.slice(3));

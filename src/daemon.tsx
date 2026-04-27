@@ -341,7 +341,7 @@ function App() {
 
           // first | commit — both record; only commit computes a diff
           const fullText = w.texts.join("\n");
-          const embedding = generateEmbedding(fullText);
+          const embedding = await generateEmbedding(fullText);
           const channelNamesJson = JSON.stringify(tw.channels);
           const pageKey = `${w.window_id}\0${w.title}`;
           let diffText: string | null = null;
@@ -352,7 +352,7 @@ function App() {
               const diffLines = computeDiffLines(prevTexts, w.texts);
               if (diffLines.length > 0) {
                 diffText = diffLines.join("\n");
-                diffEmbedding = generateEmbedding(diffText);
+                diffEmbedding = await generateEmbedding(diffText);
               }
             }
           }

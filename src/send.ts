@@ -5,7 +5,7 @@
 import { join, dirname } from "path";
 import { Database } from "bun:sqlite";
 import { DB_PATH, DATA_DIR, SCREENSHOT_DIR } from "./lib/constants";
-import { generateEmbedding } from "./lib/capture";
+import { generateEmbeddingSync as generateEmbedding } from "./lib/capture";
 
 const AX_TEXT_PATH = join(dirname(process.execPath), "tunr-ax-text");
 const AX_TEXT_FALLBACK = join(import.meta.dir, "..", "tunr-ax-text");
