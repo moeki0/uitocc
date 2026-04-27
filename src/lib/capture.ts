@@ -12,6 +12,7 @@ const EMBED_FALLBACK = join(PROJECT_DIR, "tunr-embed");
 export const embedBin = await Bun.file(EMBED_PATH).exists() ? EMBED_PATH : EMBED_FALLBACK;
 
 export function generateEmbedding(text: string): Buffer | null {
+  const t0 = Date.now();
   try {
     const proc = Bun.spawnSync([embedBin], {
       stdin: new TextEncoder().encode(text),
@@ -24,10 +25,14 @@ export function generateEmbedding(text: string): Buffer | null {
     return buf;
   } catch {
     return null;
+  } finally {
+    const dt = Date.now() - t0;
+    if (dt > 30) console.error(`[perf] embed ${dt}ms (chars=${text.length})`);
   }
 }
 
 export async function getAllWindows(): Promise<WindowInfo[]> {
+  const t0 = Date.now();
   try {
     const proc = Bun.spawnSync([axTextBin, "--all"], { stderr: "pipe" });
     if (proc.exitCode !== 0) return [];
@@ -36,6 +41,9 @@ export async function getAllWindows(): Promise<WindowInfo[]> {
     return JSON.parse(out);
   } catch {
     return [];
+  } finally {
+    const dt = Date.now() - t0;
+    if (dt > 30) console.error(`[perf] ax ${dt}ms`);
   }
 }
 
