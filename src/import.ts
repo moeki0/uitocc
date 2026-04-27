@@ -19,13 +19,13 @@ export async function runImport(args: string[]) {
     `INSERT OR IGNORE INTO channels (name, include_audio) VALUES (?, ?)`
   );
   const insertScreen = db.prepare(
-    `INSERT INTO screen_states (timestamp, pid, window_index, app, window_title, texts, channel_names, window_id, diff_text) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT OR IGNORE INTO screen_states (timestamp, pid, window_index, app, window_title, texts, channel_names, window_id, diff_text) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const insertAudio = db.prepare(
-    `INSERT INTO audio_transcripts (timestamp, audio_path, transcript) VALUES (?, ?, ?)`
+    `INSERT OR IGNORE INTO audio_transcripts (timestamp, audio_path, transcript) VALUES (?, ?, ?)`
   );
   const insertIngested = db.prepare(
-    `INSERT INTO ingested (timestamp, source, channel_name, text, meta) VALUES (?, ?, ?, ?, ?)`
+    `INSERT OR IGNORE INTO ingested (timestamp, source, channel_name, text, meta) VALUES (?, ?, ?, ?, ?)`
   );
 
   const counts: Record<string, number> = {};

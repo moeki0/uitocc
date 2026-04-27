@@ -19,6 +19,7 @@ db.run(`CREATE TABLE IF NOT EXISTS screen_states (
 )`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_screen_states_timestamp ON screen_states(timestamp)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_screen_states_app ON screen_states(app)`);
+try { db.run(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_screen_states ON screen_states(timestamp, pid, window_id, window_title)`); } catch {}
 
 try { db.run(`ALTER TABLE screen_states ADD COLUMN embedding BLOB`); } catch {}
 try { db.run(`ALTER TABLE screen_states DROP COLUMN screenshot_path`); } catch {}
@@ -53,12 +54,13 @@ db.run(`CREATE TABLE IF NOT EXISTS audio_transcripts (
   created_at TEXT DEFAULT (datetime('now'))
 )`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_audio_timestamp ON audio_transcripts(timestamp)`);
+try { db.run(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_audio_transcripts ON audio_transcripts(timestamp, audio_path)`); } catch {}
 
 export const insertAudioStmt = db.prepare(
-  `INSERT INTO audio_transcripts (timestamp, audio_path, transcript) VALUES (?, ?, ?)`
+  `INSERT OR IGNORE INTO audio_transcripts (timestamp, audio_path, transcript) VALUES (?, ?, ?)`
 );
 export const insertStmt = db.prepare(
-  `INSERT INTO screen_states (timestamp, pid, window_index, app, window_title, texts, embedding, channel_names, window_id, diff_text, diff_embedding) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  `INSERT OR IGNORE INTO screen_states (timestamp, pid, window_index, app, window_title, texts, embedding, channel_names, window_id, diff_text, diff_embedding) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 );
 
 db.run(`CREATE TABLE IF NOT EXISTS ingested (
@@ -74,6 +76,7 @@ db.run(`CREATE TABLE IF NOT EXISTS ingested (
 db.run(`CREATE INDEX IF NOT EXISTS idx_ingested_timestamp ON ingested(timestamp)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_ingested_source ON ingested(source)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_ingested_channel ON ingested(channel_name)`);
+try { db.run(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_ingested ON ingested(timestamp, source, text)`); } catch {}
 
 export const insertIngestedStmt = db.prepare(
   `INSERT INTO ingested (timestamp, source, channel_name, text, meta, embedding) VALUES (?, ?, ?, ?, ?, ?)`
