@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "fs";
+import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
@@ -84,6 +84,35 @@ describe("export → import round-trip", () => {
     expect(c.screen).toBe(1);
     expect(c.audio).toBe(1);
     expect(c.ingested).toBe(1);
+  });
+
+  test("tar.gz round-trip carries screenshot files", async () => {
+    seed();
+    // Create a fake screenshot the seed can reference
+    const shotsDir = join(tmpDir, "screenshots");
+    require("fs").mkdirSync(shotsDir, { recursive: true });
+    const shotPath = join(shotsDir, "test-shot.png");
+    writeFileSync(shotPath, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xde, 0xad]));
+    db.prepare(`UPDATE screen_states SET screenshot_path = ? WHERE timestamp = ?`).run(shotPath, "2026-04-27T10:00:00.000Z");
+
+    const out = join(tmpDir, "rt.tar.gz");
+    await runExport(["--out", out]);
+    expect(existsSync(out)).toBe(true);
+
+    // Wipe DB AND screenshot to confirm import restores it
+    db.run(`DELETE FROM screen_states`);
+    db.run(`DELETE FROM audio_transcripts`);
+    db.run(`DELETE FROM ingested`);
+    db.run(`DELETE FROM channels`);
+    require("fs").rmSync(shotPath, { force: true });
+
+    await runImport([out]);
+    expect(existsSync(shotPath)).toBe(true);
+    const restored = readFileSync(shotPath);
+    expect(restored[0]).toBe(0x89);
+    expect(restored[3]).toBe(0x47);
+    const row = db.prepare(`SELECT screenshot_path FROM screen_states WHERE timestamp = ?`).get("2026-04-27T10:00:00.000Z") as any;
+    expect(row.screenshot_path).toBe(shotPath);
   });
 
   test("UNIQUE constraints reject duplicate inserts", () => {
