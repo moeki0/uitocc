@@ -8,30 +8,9 @@
 
 import { insertIngestedStmt } from "./lib/db";
 import { generateEmbedding } from "./lib/capture";
+import { parseIngestArgs } from "./lib/ingest-args";
 
-// Parse args
-const args = process.argv.slice(3);
-let source = "";
-let channel: string | null = null;
-const meta: Record<string, string> = {};
-
-for (let i = 0; i < args.length; i++) {
-  switch (args[i]) {
-    case "--source":
-      source = args[++i] || "";
-      break;
-    case "--channel":
-      channel = args[++i] || null;
-      break;
-    case "--meta":
-      const kv = args[++i] || "";
-      const eq = kv.indexOf("=");
-      if (eq > 0) {
-        meta[kv.slice(0, eq)] = kv.slice(eq + 1);
-      }
-      break;
-  }
-}
+const { source, channel, meta } = parseIngestArgs(process.argv.slice(3));
 
 if (!source) {
   console.error("Error: --source is required");

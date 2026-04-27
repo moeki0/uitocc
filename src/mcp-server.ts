@@ -62,24 +62,8 @@ function queryEmbedding(text: string): Float64Array | null {
   }
 }
 
-function cosineSimilarity(a: Float64Array, b: Float64Array): number {
-  let dot = 0, normA = 0, normB = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
-  }
-  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
-}
-
-function blobToFloat64Array(blob: Uint8Array | Buffer): Float64Array {
-  const view = new DataView(blob.buffer, blob.byteOffset, blob.byteLength);
-  const arr = new Float64Array(blob.byteLength / 8);
-  for (let i = 0; i < arr.length; i++) {
-    arr[i] = view.getFloat64(i * 8, false); // big-endian
-  }
-  return arr;
-}
+import { cosineSimilarity, blobToFloat64Array } from "./lib/embedding";
+import { makeDiff } from "./lib/unified-diff";
 
 const mcp = new Server(
   { name: "tunr", version: "1.1.0" },
@@ -692,48 +676,6 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 // --- In-memory subscription state (per MCP server process = per Claude Code session) ---
 const subscribedChannels = new Set<string>();
 let paused = false;
-
-// Compact diff — only changed lines with position info
-function makeDiff(oldLines: string[], newLines: string[]): string {
-  const m = oldLines.length, n = newLines.length;
-  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      dp[i][j] = oldLines[i - 1] === newLines[j - 1] ? dp[i - 1][j - 1] + 1 : Math.max(dp[i - 1][j], dp[i][j - 1]);
-    }
-  }
-  const ops: { type: " " | "-" | "+"; text: string }[] = [];
-  let i = m, j = n;
-  while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && oldLines[i - 1] === newLines[j - 1]) {
-      ops.push({ type: " ", text: oldLines[i - 1] }); i--; j--;
-    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
-      ops.push({ type: "+", text: newLines[j - 1] }); j--;
-    } else {
-      ops.push({ type: "-", text: oldLines[i - 1] }); i--;
-    }
-  }
-  ops.reverse();
-
-  // Output only - and + lines with @@ position headers
-  const changes = ops.map((o, idx) => ({ ...o, idx })).filter(o => o.type !== " ");
-  if (changes.length === 0) return "";
-
-  const result: string[] = [];
-  let lastHunkOldLine = -1;
-  let oldLine = 1, newLine = 1;
-  for (let k = 0; k < ops.length; k++) {
-    if (ops[k].type === " ") { oldLine++; newLine++; continue; }
-    // Emit position header when there's a gap
-    if (oldLine !== lastHunkOldLine + 1 || result.length === 0) {
-      result.push(`@@ -${oldLine} +${newLine} @@`);
-    }
-    result.push(`${ops[k].type}${ops[k].text}`);
-    if (ops[k].type === "-") { lastHunkOldLine = oldLine; oldLine++; }
-    else { lastHunkOldLine = oldLine; newLine++; }
-  }
-  return result.join("\n");
-}
 
 // Poll DB for new screen/audio records and notify subscribed channels
 let lastScreenId = 0;

@@ -20,6 +20,7 @@ import { generateEmbedding, getAllWindows, windowKey } from "./lib/capture";
 import { checkForUpdate } from "./lib/update-check";
 import { isDenied } from "./lib/deny";
 import { computeDiffLines } from "./lib/diff";
+import { decideRecordAction, type WindowRecordState } from "./lib/record-state";
 
 // ===== TUI =====
 
@@ -304,7 +305,7 @@ function App() {
   useEffect(() => {
     let active = true;
     // Per-window state: last seen text, when it last changed, whether we've recorded since last change
-    const windowState = new Map<string, { textsJson: string; lastChangeAt: number; recorded: boolean }>();
+    const windowState = new Map<string, WindowRecordState>();
     // Per-page (window_id + title) last recorded texts for diff computation
     const lastRecordedTexts = new Map<string, string[]>();
 
@@ -329,37 +330,24 @@ function App() {
 
           const textsJson = JSON.stringify(w.texts);
           const state = windowState.get(key);
+          const action = decideRecordAction(state, textsJson, now, settleSecRef.current * 1000);
 
-          if (!state) {
-            // First time seeing this window — record immediately (no diff)
-            const fullText = w.texts.join("\n");
-            const embedding = generateEmbedding(fullText);
-            const channelNamesJson = JSON.stringify(tw.channels);
-            const pageKey = `${w.window_id}\0${w.title}`;
-            lastRecordedTexts.set(pageKey, w.texts);
-            insertStmt.run(new Date().toISOString(), w.pid, w.window_index, w.app, w.title, textsJson, embedding, channelNamesJson, w.window_id, null, null);
-            setRecordCount((c) => c + 1);
-            windowState.set(key, { textsJson, lastChangeAt: now, recorded: true });
+          if (action.kind === "skip") continue;
+
+          if (action.kind === "update") {
+            windowState.set(key, action.nextState);
             continue;
           }
 
-          if (state.textsJson !== textsJson) {
-            // Content changed — update state, don't record yet
-            state.textsJson = textsJson;
-            state.lastChangeAt = now;
-            state.recorded = false;
-            continue;
-          }
-
-          // Content unchanged — check if settled long enough
-          if (!state.recorded && (now - state.lastChangeAt) >= settleSecRef.current * 1000) {
-            const fullText = w.texts.join("\n");
-            const embedding = generateEmbedding(fullText);
-            const channelNamesJson = JSON.stringify(tw.channels);
-            const pageKey = `${w.window_id}\0${w.title}`;
+          // first | commit — both record; only commit computes a diff
+          const fullText = w.texts.join("\n");
+          const embedding = generateEmbedding(fullText);
+          const channelNamesJson = JSON.stringify(tw.channels);
+          const pageKey = `${w.window_id}\0${w.title}`;
+          let diffText: string | null = null;
+          let diffEmbedding: Buffer | null = null;
+          if (action.kind === "commit") {
             const prevTexts = lastRecordedTexts.get(pageKey);
-            let diffText: string | null = null;
-            let diffEmbedding: Buffer | null = null;
             if (prevTexts) {
               const diffLines = computeDiffLines(prevTexts, w.texts);
               if (diffLines.length > 0) {
@@ -367,10 +355,14 @@ function App() {
                 diffEmbedding = generateEmbedding(diffText);
               }
             }
-            lastRecordedTexts.set(pageKey, w.texts);
-            insertStmt.run(new Date().toISOString(), w.pid, w.window_index, w.app, w.title, textsJson, embedding, channelNamesJson, w.window_id, diffText, diffEmbedding);
-            setRecordCount((c) => c + 1);
-            state.recorded = true;
+          }
+          lastRecordedTexts.set(pageKey, w.texts);
+          insertStmt.run(new Date().toISOString(), w.pid, w.window_index, w.app, w.title, textsJson, embedding, channelNamesJson, w.window_id, diffText, diffEmbedding);
+          setRecordCount((c) => c + 1);
+          if (action.kind === "first") {
+            windowState.set(key, { textsJson, lastChangeAt: now, recorded: true });
+          } else {
+            state!.recorded = true;
           }
         }
       }
