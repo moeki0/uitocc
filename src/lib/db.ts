@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { join } from "path";
-import { DATA_DIR, DB_PATH, AUDIO_DIR } from "./constants";
+import { DATA_DIR, DB_PATH, AUDIO_DIR, MIC_DIR } from "./constants";
 import type { Capture, DayCount } from "./types";
 
 await Bun.write(join(DATA_DIR, ".keep"), ""); // ensure dir exists
@@ -30,8 +30,10 @@ try { db.run(`ALTER TABLE screen_states ADD COLUMN diff_embedding BLOB`); } catc
 db.run(`CREATE TABLE IF NOT EXISTS channels (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL UNIQUE,
-  include_audio INTEGER DEFAULT 0
+  include_audio INTEGER DEFAULT 0,
+  include_mic INTEGER DEFAULT 0
 )`);
+try { db.run(`ALTER TABLE channels ADD COLUMN include_mic INTEGER DEFAULT 0`); } catch {}
 
 try { db.run(`ALTER TABLE channels DROP COLUMN rules`); } catch {}
 
@@ -44,18 +46,22 @@ db.run(`CREATE TABLE IF NOT EXISTS channel_subscriptions (
 try { db.run(`ALTER TABLE channel_subscriptions ADD COLUMN paused INTEGER DEFAULT 0`); } catch {}
 
 await Bun.write(join(AUDIO_DIR, ".keep"), "");
+await Bun.write(join(MIC_DIR, ".keep"), "");
 
 db.run(`CREATE TABLE IF NOT EXISTS audio_transcripts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   timestamp TEXT NOT NULL,
   audio_path TEXT NOT NULL,
   transcript TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT 'system',
   created_at TEXT DEFAULT (datetime('now'))
 )`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_audio_timestamp ON audio_transcripts(timestamp)`);
+// Migration: add source column if missing
+try { db.run(`ALTER TABLE audio_transcripts ADD COLUMN source TEXT NOT NULL DEFAULT 'system'`); } catch {}
 
 export const insertAudioStmt = db.prepare(
-  `INSERT INTO audio_transcripts (timestamp, audio_path, transcript) VALUES (?, ?, ?)`
+  `INSERT INTO audio_transcripts (timestamp, audio_path, transcript, source) VALUES (?, ?, ?, ?)`
 );
 export const insertStmt = db.prepare(
   `INSERT INTO screen_states (timestamp, pid, window_index, app, window_title, texts, embedding, channel_names, window_id, diff_text, diff_embedding) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`

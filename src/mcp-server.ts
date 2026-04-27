@@ -201,13 +201,18 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "recent_audio",
       description:
-        "Get recent audio transcripts from system audio captured by the daemon.",
+        "Get recent audio transcripts captured by the daemon.",
       inputSchema: {
         type: "object" as const,
         properties: {
           channel: {
             type: "string",
             description: "Filter results to a specific channel (only channels with audio enabled)",
+          },
+          source: {
+            type: "string",
+            enum: ["system", "mic"],
+            description: "Filter by audio source: 'system' (app/speaker audio via BlackHole) or 'mic' (microphone). Omit for both.",
           },
           minutes: {
             type: "number",
@@ -241,7 +246,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "search_audio",
       description:
-        "Search audio transcripts from system audio captured by the daemon.",
+        "Search audio transcripts captured by the daemon.",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -252,6 +257,11 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
           channel: {
             type: "string",
             description: "Filter results to a specific channel (only channels with audio enabled)",
+          },
+          source: {
+            type: "string",
+            enum: ["system", "mic"],
+            description: "Filter by audio source: 'system' (app/speaker audio via BlackHole) or 'mic' (microphone). Omit for both.",
           },
           minutes: {
             type: "number",
@@ -579,20 +589,23 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
     try {
       const minutes = ((args as any)?.minutes as number) || 10;
       const limit = ((args as any)?.limit as number) || 20;
+      const source = (args as any)?.source as string | undefined;
       const since = new Date(Date.now() - minutes * 60_000).toISOString();
 
-      const rows = db.prepare(
-        `SELECT timestamp, transcript FROM audio_transcripts
-         WHERE timestamp > ?
-         ORDER BY timestamp DESC LIMIT ?`
-      ).all(since, limit) as any[];
+      let sql = `SELECT timestamp, transcript, source FROM audio_transcripts WHERE timestamp > ?`;
+      const params: any[] = [since];
+      if (source) { sql += ` AND source = ?`; params.push(source); }
+      sql += ` ORDER BY timestamp DESC LIMIT ?`;
+      params.push(limit);
+
+      const rows = db.prepare(sql).all(...params) as any[];
 
       if (rows.length === 0) {
         return { content: [{ type: "text" as const, text: `No audio transcripts in the last ${minutes} minutes.` }] };
       }
 
       const result = rows.map((r) =>
-        `[${r.timestamp}] ${r.transcript}`
+        `[${r.timestamp}] [${r.source || "system"}] ${r.transcript}`
       ).join("\n\n---\n\n");
 
       return { content: [{ type: "text" as const, text: result }] };
@@ -610,20 +623,23 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       const query = (args as any).query as string;
       const minutes = ((args as any).minutes as number) || 60;
       const limit = ((args as any).limit as number) || 20;
+      const source = (args as any)?.source as string | undefined;
       const since = new Date(Date.now() - minutes * 60_000).toISOString();
 
-      const rows = db.prepare(
-        `SELECT timestamp, transcript FROM audio_transcripts
-         WHERE timestamp > ? AND transcript LIKE ?
-         ORDER BY timestamp DESC LIMIT ?`
-      ).all(since, `%${query}%`, limit) as any[];
+      let sql = `SELECT timestamp, transcript, source FROM audio_transcripts WHERE timestamp > ? AND transcript LIKE ?`;
+      const params: any[] = [since, `%${query}%`];
+      if (source) { sql += ` AND source = ?`; params.push(source); }
+      sql += ` ORDER BY timestamp DESC LIMIT ?`;
+      params.push(limit);
+
+      const rows = db.prepare(sql).all(...params) as any[];
 
       if (rows.length === 0) {
         return { content: [{ type: "text" as const, text: `No audio transcripts matching "${query}" in the last ${minutes} minutes.` }] };
       }
 
       const result = rows.map((r) =>
-        `[${r.timestamp}] ${r.transcript}`
+        `[${r.timestamp}] [${r.source || "system"}] ${r.transcript}`
       ).join("\n\n---\n\n");
 
       return { content: [{ type: "text" as const, text: result }] };
@@ -831,23 +847,28 @@ async function pollDb() {
 
       // New audio records
       const audios = db.prepare(
-        "SELECT id, timestamp, transcript FROM audio_transcripts WHERE id > ? ORDER BY id"
+        "SELECT id, timestamp, transcript, source FROM audio_transcripts WHERE id > ? ORDER BY id"
       ).all(lastAudioId) as any[];
 
-      // Find channels with audio enabled
+      // Find channels with audio or mic enabled
       const audioChans = db.prepare("SELECT name FROM channels WHERE include_audio = 1").all() as any[];
       const audioSubbed = audioChans.map((c: any) => c.name).filter((n: string) => subNames.includes(n));
+      const micChans = db.prepare("SELECT name FROM channels WHERE include_mic = 1").all() as any[];
+      const micSubbed = micChans.map((c: any) => c.name).filter((n: string) => subNames.includes(n));
 
       for (const r of audios) {
         lastAudioId = r.id;
-        if (audioSubbed.length === 0) continue;
+        const src = r.source || "system";
+        const targetChans = src === "mic" ? micSubbed : audioSubbed;
+        if (targetChans.length === 0) continue;
+        const label = src === "mic" ? "Mic transcript" : "Audio transcript";
 
-        for (const ch of audioSubbed) {
+        for (const ch of targetChans) {
           await mcp.notification({
             method: "notifications/claude/channel",
             params: {
-              content: `[${ch}] Audio transcript:\n${r.transcript}`,
-              meta: { source: "tunr", event: "audio", channel: ch, timestamp: r.timestamp },
+              content: `[${ch}] ${label}:\n${r.transcript}`,
+              meta: { source: "tunr", event: "audio", channel: ch, timestamp: r.timestamp, audioSource: src },
             },
           });
         }

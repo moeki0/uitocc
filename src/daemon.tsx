@@ -13,7 +13,7 @@ import { unlinkSync } from "fs";
 
 import type { TrackedSource, Capture, DayCount, DenyRule } from "./lib/types";
 import type { View, SettingsTab, FocusArea } from "./lib/types";
-import { VERSION, DB_PATH, SETTINGS_PATH, AUDIO_DIR, AUDIO_SOURCE_KEY, POLL_MS, savedAudioChunkSec, savedSettings } from "./lib/constants";
+import { VERSION, DB_PATH, SETTINGS_PATH, AUDIO_DIR, MIC_DIR, AUDIO_SOURCE_KEY, MIC_SOURCE_KEY, POLL_MS, savedAudioChunkSec, savedSettings } from "./lib/constants";
 import { db, insertStmt, insertAudioStmt, localDateStr, getRecentCaptures, getDailyCounts, getHourlyCountsForDate, getCapturesForDate } from "./lib/db";
 import { getChannels, getActiveSubscriptions } from "./lib/rules";
 import { generateEmbedding, getAllWindows, windowKey } from "./lib/capture";
@@ -90,6 +90,13 @@ function App() {
   const audioEnabled = (audioSource?.channels.length ?? 0) > 0;
   const audioEnabledRef = useRef(false);
 
+  // Mic
+  const [micStatus, setMicStatus] = useState("starting");
+  const micProcRef = useRef<any>(null);
+  const micSource = windows.get(MIC_SOURCE_KEY);
+  const micEnabled = (micSource?.channels.length ?? 0) > 0;
+  const micEnabledRef = useRef(false);
+
   // Initialize audio virtual source on mount
   useEffect(() => {
     setWindows((prev) => {
@@ -98,6 +105,19 @@ function App() {
       next.set(AUDIO_SOURCE_KEY, {
         pid: 0, window_index: 0, window_id: 0,
         app: "Audio", title: "System Audio",
+        urls: [],
+        channels: [],
+        lastSeen: Date.now(),
+        virtual: true,
+      });
+      return next;
+    });
+    setWindows((prev) => {
+      if (prev.has(MIC_SOURCE_KEY)) return prev;
+      const next = new Map(prev);
+      next.set(MIC_SOURCE_KEY, {
+        pid: 0, window_index: 0, window_id: 0,
+        app: "Audio", title: "Microphone",
         urls: [],
         channels: [],
         lastSeen: Date.now(),
@@ -178,6 +198,7 @@ function App() {
   // Sync refs
   useEffect(() => { windowsRef.current = windows; }, [windows]);
   useEffect(() => { audioEnabledRef.current = audioEnabled; }, [audioEnabled]);
+  useEffect(() => { micEnabledRef.current = micEnabled; }, [micEnabled]);
 
   // Sync include_audio flag on channels when audio source assignment changes
   useEffect(() => {
@@ -191,6 +212,18 @@ function App() {
     }
   }, [audioSource?.channels.join(",")]);
 
+  // Sync include_mic flag on channels when mic source assignment changes
+  useEffect(() => {
+    const micChans = micSource?.channels ?? [];
+    const allChans = getChannels();
+    for (const ch of allChans) {
+      const shouldInclude = micChans.includes(ch.name) ? 1 : 0;
+      if (ch.include_mic !== shouldInclude) {
+        db.run(`UPDATE channels SET include_mic = ? WHERE name = ?`, shouldInclude, ch.name);
+      }
+    }
+  }, [micSource?.channels.join(",")]);
+
   // Keep audio source's lastSeen fresh so it doesn't get cleaned up
   useEffect(() => {
     const iv = setInterval(() => {
@@ -199,6 +232,19 @@ function App() {
         if (!src) return prev;
         const next = new Map(prev);
         next.set(AUDIO_SOURCE_KEY, { ...src, lastSeen: Date.now() });
+        return next;
+      });
+    }, 5000);
+    return () => clearInterval(iv);
+  }, []);
+  // Keep mic source's lastSeen fresh
+  useEffect(() => {
+    const iv = setInterval(() => {
+      setWindows((prev) => {
+        const src = prev.get(MIC_SOURCE_KEY);
+        if (!src) return prev;
+        const next = new Map(prev);
+        next.set(MIC_SOURCE_KEY, { ...src, lastSeen: Date.now() });
         return next;
       });
     }, 5000);
@@ -428,7 +474,7 @@ function App() {
               if (wp.exitCode !== 0) continue;
               const transcript = wp.stdout.toString().trim();
               if (transcript) {
-                insertAudioStmt.run(chunk.timestamp, chunk.file, transcript);
+                insertAudioStmt.run(chunk.timestamp, chunk.file, transcript, "system");
                 setLastTranscript(transcript.slice(0, 80));
                 setAudioBroadcastCount((c) => c + 1);
               }
@@ -442,6 +488,68 @@ function App() {
     startAudio();
 
     // Audio files are deleted immediately after transcription; no periodic cleanup needed.
+    return () => { active = false; };
+  }, []);
+
+  // --- Mic ---
+  useEffect(() => {
+    let active = true;
+    const AUDIO_CAPTURE_PATH = join(dirname(process.execPath), "tunr-audio-capture");
+    const AUDIO_CAPTURE_FALLBACK = join(import.meta.dir, "..", "tunr-audio-capture");
+
+    async function startMic() {
+      const audioBin = await Bun.file(AUDIO_CAPTURE_PATH).exists() ? AUDIO_CAPTURE_PATH : AUDIO_CAPTURE_FALLBACK;
+      if (!await Bun.file(audioBin).exists()) { setMicStatus("no binary"); return; }
+
+      const whisperCheck = Bun.spawnSync(["which", "whisper-cli"], { stdout: "pipe", stderr: "pipe" });
+      if (whisperCheck.exitCode !== 0) { setMicStatus("no whisper"); return; }
+      const modelPath = join(homedir(), ".cache", "whisper-cpp-small.bin");
+      if (!await Bun.file(modelPath).exists()) { setMicStatus("no model"); return; }
+
+      while (active) {
+        if (!micEnabledRef.current) { setMicStatus("off"); await Bun.sleep(1000); continue; }
+
+        setMicStatus("recording");
+        const proc = Bun.spawn([audioBin, MIC_DIR, String(audioChunkRef.current), "--device", "default"], { stdout: "pipe", stderr: "pipe" });
+        micProcRef.current = proc;
+
+        const reader = proc.stdout.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+
+        while (active && micEnabledRef.current) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split("\n");
+          buf = lines.pop() || "";
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const chunk = JSON.parse(line);
+              if (!chunk || typeof chunk.file !== "string" || typeof chunk.timestamp !== "string") continue;
+              const mp = join(homedir(), ".cache", "whisper-cpp-small.bin");
+              const wp = Bun.spawnSync([
+                "whisper-cli", "-m", mp, "-l", "auto", "-f", chunk.file, "-np", "-nt",
+              ], { stdout: "pipe", stderr: "pipe" });
+              try { unlinkSync(chunk.file); } catch {}
+              if (wp.exitCode !== 0) continue;
+              const transcript = wp.stdout.toString().trim();
+              if (transcript) {
+                insertAudioStmt.run(chunk.timestamp, chunk.file, transcript, "mic");
+                setLastTranscript(transcript.slice(0, 80));
+                setAudioBroadcastCount((c) => c + 1);
+              }
+            } catch {}
+          }
+        }
+        proc.kill();
+        micProcRef.current = null;
+      }
+    }
+    startMic();
+
     return () => { active = false; };
   }, []);
 
@@ -486,7 +594,7 @@ function App() {
       if (key.return && channelPickerIndex < chList.length) {
         const w = allSources[sourcesIndex];
         if (w) {
-          const wKey = w.virtual ? AUDIO_SOURCE_KEY : windowKey(w);
+          const wKey = w.virtual ? (w.title === "Microphone" ? MIC_SOURCE_KEY : AUDIO_SOURCE_KEY) : windowKey(w);
           toggleChannel(wKey, chList[channelPickerIndex].name);
         }
         setChannelPickerOpen(false);
@@ -497,6 +605,7 @@ function App() {
     // Global: quit
     if (input === "q" || (key.ctrl && input === "c")) {
       if (audioProcRef.current) audioProcRef.current.kill();
+      if (micProcRef.current) micProcRef.current.kill();
       db.close();
       process.exit(0);
     }
@@ -703,7 +812,7 @@ function App() {
           if (chList.length === 1) {
             // Single channel: toggle directly
             const w = allSources[sourcesIndex];
-            const wKey = w.virtual ? AUDIO_SOURCE_KEY : windowKey(w);
+            const wKey = w.virtual ? (w.title === "Microphone" ? MIC_SOURCE_KEY : AUDIO_SOURCE_KEY) : windowKey(w);
             toggleChannel(wKey, chList[0].name);
           } else {
             // Multiple channels: open picker
@@ -754,7 +863,7 @@ function App() {
           const sel = focusArea === "sources" && i === sourcesIndex;
           const assigned = w.channels.length > 0;
           return (
-            <Box key={w.virtual ? AUDIO_SOURCE_KEY : windowKey(w)} paddingLeft={1}>
+            <Box key={w.virtual ? (w.title === "Microphone" ? MIC_SOURCE_KEY : AUDIO_SOURCE_KEY) : windowKey(w)} paddingLeft={1}>
               <Text wrap="truncate-end">
                 <Text color={sel ? "magenta" : "gray"}>{sel ? "▸" : " "} </Text>
                 <Text color={assigned ? "white" : "gray"} dimColor={!assigned}>{w.app}</Text>

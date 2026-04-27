@@ -1,35 +1,62 @@
 #!/usr/bin/env swift
-/// Capture system audio via BlackHole and save as WAV chunks
-/// Usage: audio_capture <output_dir> [chunk_seconds]
+/// Capture audio from a specified device (or BlackHole by default) and save as WAV chunks
+/// Usage: audio_capture <output_dir> [chunk_seconds] [--device <name>]
+///   --device default   → system default microphone
+///   --device <name>    → device whose name contains <name> (case-insensitive)
+///   (no --device)      → BlackHole (legacy behavior)
 import AVFoundation
 import Foundation
 
 guard CommandLine.arguments.count >= 2 else {
-    fputs("Usage: audio_capture <output_dir> [chunk_seconds]\n", stderr)
+    fputs("Usage: audio_capture <output_dir> [chunk_seconds] [--device <name>]\n", stderr)
     exit(1)
 }
 
 let outputDir = CommandLine.arguments[1]
-let chunkSeconds = CommandLine.arguments.count >= 3 ? Double(CommandLine.arguments[2]) ?? 30 : 30.0
+var chunkSeconds: Double = 30.0
+var deviceQuery: String? = nil
 
-// Find BlackHole device
-let devices = AVCaptureDevice.DiscoverySession(
-    deviceTypes: [.microphone, .external],
-    mediaType: .audio,
-    position: .unspecified
-).devices
-
-var blackhole: AVCaptureDevice? = nil
-for d in devices {
-    if d.localizedName.lowercased().contains("blackhole") {
-        blackhole = d
-        break
+// Parse arguments
+var i = 2
+while i < CommandLine.arguments.count {
+    if CommandLine.arguments[i] == "--device" && i + 1 < CommandLine.arguments.count {
+        deviceQuery = CommandLine.arguments[i + 1]
+        i += 2
+    } else if chunkSeconds == 30.0, let v = Double(CommandLine.arguments[i]) {
+        chunkSeconds = v
+        i += 1
+    } else {
+        i += 1
     }
 }
 
-// Also check via Core Audio
-if blackhole == nil {
-    // Try AudioObjectGetPropertyData to find BlackHole
+func findDevice(query: String?) -> AVCaptureDevice? {
+    // --device default → system default mic
+    if let q = query, q == "default" {
+        return AVCaptureDevice.default(for: .audio)
+    }
+
+    let devices = AVCaptureDevice.DiscoverySession(
+        deviceTypes: [.microphone, .external],
+        mediaType: .audio,
+        position: .unspecified
+    ).devices
+
+    // --device <name> → partial match
+    if let q = query {
+        let lower = q.lowercased()
+        for d in devices {
+            if d.localizedName.lowercased().contains(lower) { return d }
+        }
+        return nil
+    }
+
+    // No --device → find BlackHole (legacy)
+    for d in devices {
+        if d.localizedName.lowercased().contains("blackhole") { return d }
+    }
+
+    // Also check via Core Audio
     var propAddr = AudioObjectPropertyAddress(
         mSelector: kAudioHardwarePropertyDevices,
         mScope: kAudioObjectPropertyScopeGlobal,
@@ -51,14 +78,18 @@ if blackhole == nil {
         var nameSize = UInt32(MemoryLayout<CFString>.size)
         AudioObjectGetPropertyData(id, &nameAddr, 0, nil, &nameSize, &name)
         if (name as String).lowercased().contains("blackhole") {
-            blackhole = AVCaptureDevice(uniqueID: String(id))
-            break
+            return AVCaptureDevice(uniqueID: String(id))
         }
     }
+    return nil
 }
 
-guard let device = blackhole else {
-    fputs("BlackHole audio device not found. Install with: brew install --cask blackhole-2ch\n", stderr)
+guard let device = findDevice(query: deviceQuery) else {
+    if deviceQuery != nil {
+        fputs("Audio device matching '\(deviceQuery!)' not found.\n", stderr)
+    } else {
+        fputs("BlackHole audio device not found. Install with: brew install --cask blackhole-2ch\n", stderr)
+    }
     exit(1)
 }
 
