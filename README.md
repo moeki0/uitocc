@@ -4,6 +4,16 @@ Screen & audio context provider for [Claude Code](https://docs.anthropic.com/en/
 
 tunr captures your macOS screen and system audio, then delivers it to Claude Code through MCP — so Claude can see what you're looking at and hear what you're listening to.
 
+## Install & set up via Claude Code
+
+Let Claude Code do the install and onboarding for you. In any Claude Code session, ask:
+
+> Follow https://github.com/moeki0/tunr/blob/main/docs/claude-code-onboarding.md to install and onboard me onto tunr.
+
+Claude Code will run through the [runbook](docs/claude-code-onboarding.md) — installing tunr, registering the MCP server, starting the daemon, creating channels, and verifying end-to-end. It will pause and ask you when a step requires GUI interaction (Accessibility permission, Audio MIDI setup) or a privacy decision (deny list, Chrome JS).
+
+Prefer manual setup? Continue reading.
+
 ## What it does
 
 - **Screen capture** — Reads visible text from macOS windows via the Accessibility API. Debounce-based recording captures settled content, and channel notifications use compact unified diffs to minimize context usage
