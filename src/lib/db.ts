@@ -47,6 +47,17 @@ db.run(`CREATE TABLE IF NOT EXISTS channel_subscriptions (
 
 try { db.run(`ALTER TABLE channel_subscriptions ADD COLUMN paused INTEGER DEFAULT 0`); } catch {}
 
+db.run(`CREATE TABLE IF NOT EXISTS sources (
+  window_key TEXT PRIMARY KEY,
+  app TEXT NOT NULL,
+  title TEXT NOT NULL,
+  urls TEXT NOT NULL DEFAULT '[]',
+  channels TEXT NOT NULL DEFAULT '[]',
+  last_seen INTEGER NOT NULL,
+  virtual INTEGER NOT NULL DEFAULT 0
+)`);
+db.run(`CREATE INDEX IF NOT EXISTS idx_sources_last_seen ON sources(last_seen)`);
+
 await Bun.write(join(AUDIO_DIR, ".keep"), "");
 await Bun.write(join(MIC_DIR, ".keep"), "");
 

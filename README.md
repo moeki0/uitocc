@@ -89,65 +89,64 @@ brew install whisper-cpp
 
 ## Usage
 
-### Start the daemon
+### Start the engine
 
 ```bash
 tunr start
 ```
 
-This opens a terminal UI with two panels:
+Runs the capture engine in the foreground (no TUI). It polls windows, records assigned sources, and streams audio. Logs status lines to stdout. Ctrl-C to stop.
 
-#### SOURCES
+All controls — channels, source assignment, deny rules, settings — are CLI subcommands you run from another shell while `tunr start` is up.
 
-Shows all detected windows. Each window starts unassigned (gray). Use **Enter** to assign a window to a channel — only assigned windows are captured and broadcast.
+### CLI
 
-- Single channel: Enter toggles assignment directly
-- Multiple channels: Enter opens a channel picker
-
-#### FEED
-
-Shows captured screen and audio entries in reverse chronological order. Filter by type (`1` screen, `2` audio), channel (`3`-`9` for up to 7 channels), or search (`/`).
-
-### TUI controls
-
-| Key | Action |
-|-----|--------|
-| `↑` `↓` | Navigate lists |
-| `Enter` | Assign channel (SOURCES) / View detail (FEED) |
-| `Tab` | Switch focus between SOURCES and FEED |
-| `S` | Open settings |
-| `C` | Calendar view |
-| `1` `2` | Toggle screen/audio filter |
-| `3`-`9` | Toggle channel filter |
-| `/` | Search captures |
-| `Q` | Quit |
+| Command | Description |
+|---------|-------------|
+| `tunr start` | Run the foreground capture engine |
+| `tunr log [-f\|--follow]` | Print recent captures (tail with `--follow`) |
+| `tunr sources [list] [--json]` | List currently detected windows + their channel assignments (TSV) |
+| `tunr sources assign <window-key> <channel>` | Assign a window to a channel |
+| `tunr sources unassign <window-key> <channel>` | Unassign |
+| `tunr channels` | List channels |
+| `tunr channels add <name>` | Create a channel |
+| `tunr channels rm <name>` | Delete a channel |
+| `tunr deny` | List deny rules |
+| `tunr deny add [--app G] [--title G] [--url G]` | Add a deny rule (glob) |
+| `tunr deny rm <index>` | Remove a deny rule |
+| `tunr config get [<key>]` | Read settings (dot-notation key) |
+| `tunr config set <key> <value>` | Write settings |
+| `tunr config unset <key>` | Remove a setting |
 
 ### Channels
 
-Channels are named groups of windows. Create channels in **Settings > Channels**, then assign windows to them in the SOURCES panel. Only windows assigned to a channel are captured and broadcast to Claude Code.
+Channels are named groups of windows. Create one with `tunr channels add <name>`, then assign windows to it. Only windows assigned to a channel are captured and broadcast to Claude Code.
 
 - A window can belong to multiple channels
-- Claude Code subscribes to channels via `subscribe(channel)` to receive real-time updates
+- Claude Code subscribes via `subscribe(channel)` to receive real-time updates
 - Unassigned windows are never captured
+- Source assignments are **ephemeral** — keyed by current window IDs, they may not survive a `tunr start` restart. Reassign as needed (or pipe through fzf as below)
 
-#### Settings > Channels
+#### Assigning sources via fzf
 
-| Key | Action |
-|-----|--------|
-| `C` | Create channel |
-| `X` | Delete channel |
+`tunr sources` outputs TSV starting with the window key, which is exactly what fzf wants:
 
-#### Settings > Deny List
+```bash
+tunr sources | fzf --bind 'enter:execute(tunr sources assign {1} Hobby)'
+tunr sources | fzf -m | awk '{print $1}' | xargs -n1 -I{} tunr sources assign {} Hobby
+```
+
+#### Deny list
 
 Block specific apps, window titles, or URLs from ever being captured. Rules use glob matching (`*` as wildcard, exact match otherwise). Multi-field rules use AND logic — all specified fields must match.
 
-| Key | Action |
-|-----|--------|
-| `C` | Create deny rule |
-| `Tab` | Switch field (app/title/url) |
-| `X` | Delete rule |
-
-Examples: `app: 1Password`, `url: *mail.google.com*`, `app: Google Chrome` + `url: *private*`
+```bash
+tunr deny add --app 1Password
+tunr deny add --url '*mail.google.com*'
+tunr deny add --app 'Google Chrome' --url '*private*'
+tunr deny           # list
+tunr deny rm 0      # remove by index
+```
 
 ### Ingest (pipe external data)
 
@@ -432,24 +431,18 @@ tunr includes a Claude Code plugin with slash commands for channel management:
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                  tunr start (TUI)                   │
-│                                                     │
-│  ┌─ SOURCES ──────────────────────────────────────┐ │
-│  │  Window A  [work]        ← assigned, captured  │ │
-│  │  Window B  —             ← unassigned, ignored │ │
-│  │  Window C  [work,hobby]  ← multi-channel       │ │
-│  │  Audio     [work]        ← audio capture       │ │
-│  └────────────────────────────────────────────────┘ │
-│           │                        │                │
-│           ▼                        ▼                │
-│        ┌──────────────────────────────┐             │
-│        │     SQLite (local DB)        │             │
-│        └──────────────────────────────┘             │
-│           │                                         │
-│           ▼                                         │
-│  ┌─ BROADCAST ────────────────────────────────────┐ │
-│  │  Subscribed channels → channel events          │ │
-│  └────────────────────────────────────────────────┘ │
+│           tunr start (foreground engine)            │
+│  polls windows · records assigned · audio capture   │
+└──────────────────┬──────────────────────────────────┘
+                   │ reads/writes
+                   ▼
+        ┌──────────────────────────────┐
+        │     SQLite (local DB)        │◀──── tunr assign / channels / deny
+        └──────────────────────────────┘
+                   │
+                   ▼
+┌─────────────────────────────────────────────────────┐
+│  Subscribed channels → channel events               │
 └──────────────────┬──────────────────────────────────┘
                    │
                    ▼
@@ -470,9 +463,12 @@ echo | tunr ingest ─────────────▶  SQLite (direct wr
 
 | File | Description |
 |------|-------------|
-| `daemon.tsx` | TUI daemon (Ink/React). Polls windows, manual channel assignment, records to SQLite, manages audio capture |
+| `start.ts` | Foreground engine entry — wires `lib/engine.ts` and handles signals |
+| `lib/engine.ts` | Capture engine: window polling, recording, audio/mic loops |
+| `lib/sources.ts` | Live sources table + channel assignment helpers |
+| `commands.ts` | CLI subcommands (`sources`, `channels`, `assign`, `deny`, `log`, `config`) |
 | `mcp-server.ts` | MCP server. Provides search/history tools and channel event polling |
-| `cli.ts` | CLI entry point (`start`, `mcp`, `send`, `ingest`, `--version`) |
+| `cli.ts` | CLI entry point — dispatches all subcommands |
 | `ingest.ts` | Stdin ingestion. Reads text, generates embedding, writes to `ingested` table |
 | `ax_text.swift` | Accessibility API text extractor. `--all` returns all windows as JSON with URLs for browser tabs. Uses AppleScript JS for Chrome web content |
 | `send.ts` | One-shot screen capture. Reads frontmost window via ax_text and writes directly to DB |

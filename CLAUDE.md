@@ -8,25 +8,28 @@ Screen context provider for Claude Code via MCP channels.
 bun install
 swiftc swift/ax_text.swift -o tunr-ax-text -O
 swiftc swift/send.swift -o tunr-send -O
-bun src/daemon.tsx    # tunr start — TUI daemon
+bun src/cli.ts start    # foreground capture engine (no TUI)
 ```
 
 ## Architecture
 
-- **src/daemon.tsx**: TUI daemon (Ink/React) — polls all windows, channel-based window grouping, records to SQLite
-- **src/mcp-server.ts**: MCP server with subscribe/unsubscribe/list_channels + search tools, polls DB for new records and notifies subscribed channels
+- **src/cli.ts**: Entry point — dispatches all subcommands
+- **src/start.ts**: `tunr start` — runs the foreground engine, handles SIGINT/SIGTERM
+- **src/lib/engine.ts**: Capture engine — window polling, debounce-based recording, audio/mic loops. No UI. Reads source→channel assignments and deny rules from DB/settings.json
+- **src/lib/sources.ts**: `sources` table helpers — live windows + their channel assignments (ephemeral, keyed by window_id)
+- **src/commands.ts**: CLI subcommands — `sources`, `channels`, `assign`, `unassign`, `deny`, `log`, `config`
+- **src/mcp-server.ts**: MCP server with subscribe/unsubscribe/list_channels + search tools
 - **src/ingest.ts**: CLI handler for `tunr ingest` — reads stdin, generates embedding, writes to `ingested` table
-- **src/cli.ts**: Entry point — dispatches `mcp`, `send`, `start`, `ingest` subcommands
-- **src/lib/**: Shared TypeScript modules (capture, db, rules, types, constants)
+- **src/lib/**: Shared TypeScript modules (capture, db, rules, deny, diff, types, constants)
 - **swift/send.swift**: One-shot shortcut script, writes channel_event.json
 - **swift/ax_text.swift**: AX API text extractor (`--all` for all windows as JSON), AppleScript JS for Chrome web content
 - **swift/embed.swift**: Generates 512-dim sentence embeddings via macOS NaturalLanguage NLEmbedding
 
 ## Channels
 
-Channel = unit of window grouping. Create channels in the TUI, then manually assign windows to channels in the SOURCES panel. Assigned = captured & recorded; unassigned = ignored. Claude Code subscribes with `subscribe(channel)`.
+Channel = unit of window grouping. Manage with CLI: `tunr channels add <name>` to create, `tunr assign <window-key> <channel>` to assign a live window to a channel. Assigned = captured & recorded; unassigned = ignored. Claude Code subscribes with `subscribe(channel)`.
 
-- Manual per-window channel assignment (toggle with Enter)
+- Source assignments are ephemeral (keyed by current window IDs); `tunr sources` lists live windows and their assignments
 - One window can belong to multiple channels
 - Events are only emitted for subscribed channels
 
