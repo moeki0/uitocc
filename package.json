@@ -1,6 +1,6 @@
 {
   "name": "tunr",
-  "version": "1.21.2",
+  "version": "2.0.0",
   "private": true,
   "scripts": {
     "start": "bun src/cli.ts start",
