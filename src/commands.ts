@@ -237,18 +237,20 @@ export async function runLog(args: string[]) {
     `SELECT id, timestamp, transcript, source FROM audio_transcripts ORDER BY id DESC LIMIT ?`,
   );
 
-  const initialScreen = (screenStmt.all(limit) as any[]).reverse();
-  const initialAudio = (audioStmt.all(limit) as any[]).reverse();
-
+  const merged: { ts: string; print: () => void; screenId?: number; audioId?: number }[] = [];
+  for (const r of screenStmt.all(limit) as any[]) {
+    merged.push({ ts: r.timestamp, print: () => printScreenRow(r), screenId: r.id });
+  }
+  for (const r of audioStmt.all(limit) as any[]) {
+    merged.push({ ts: r.timestamp, print: () => printAudioRow(r), audioId: r.id });
+  }
+  merged.sort((a, b) => a.ts.localeCompare(b.ts));
   let lastScreenId = 0;
   let lastAudioId = 0;
-  for (const r of initialScreen) {
-    printScreenRow(r);
-    if (r.id > lastScreenId) lastScreenId = r.id;
-  }
-  for (const r of initialAudio) {
-    printAudioRow(r);
-    if (r.id > lastAudioId) lastAudioId = r.id;
+  for (const m of merged) {
+    m.print();
+    if (m.screenId && m.screenId > lastScreenId) lastScreenId = m.screenId;
+    if (m.audioId && m.audioId > lastAudioId) lastAudioId = m.audioId;
   }
 
   if (!args.includes("--follow") && !args.includes("-f")) return;
@@ -261,10 +263,19 @@ export async function runLog(args: string[]) {
   );
 
   while (true) {
-    const newScreen = screenSince.all(lastScreenId) as any[];
-    for (const r of newScreen) { printScreenRow(r); lastScreenId = r.id; }
-    const newAudio = audioSince.all(lastAudioId) as any[];
-    for (const r of newAudio) { printAudioRow(r); lastAudioId = r.id; }
+    const batch: { ts: string; print: () => void; screenId?: number; audioId?: number }[] = [];
+    for (const r of screenSince.all(lastScreenId) as any[]) {
+      batch.push({ ts: r.timestamp, print: () => printScreenRow(r), screenId: r.id });
+    }
+    for (const r of audioSince.all(lastAudioId) as any[]) {
+      batch.push({ ts: r.timestamp, print: () => printAudioRow(r), audioId: r.id });
+    }
+    batch.sort((a, b) => a.ts.localeCompare(b.ts));
+    for (const m of batch) {
+      m.print();
+      if (m.screenId && m.screenId > lastScreenId) lastScreenId = m.screenId;
+      if (m.audioId && m.audioId > lastAudioId) lastAudioId = m.audioId;
+    }
     await Bun.sleep(1000);
   }
 }
