@@ -30,16 +30,6 @@ switch (command) {
     runChannels(args);
     break;
   }
-  case "assign": {
-    const { runAssign } = await import("./commands.ts");
-    runAssign(args);
-    break;
-  }
-  case "unassign": {
-    const { runUnassign } = await import("./commands.ts");
-    runUnassign(args);
-    break;
-  }
   case "deny": {
     const { runDeny } = await import("./commands.ts");
     runDeny(args);
@@ -87,12 +77,12 @@ switch (command) {
 Usage:
   tunr start                  Run the foreground capture engine (no TUI)
   tunr log [-f|--follow]      Print recent captures (tail with --follow)
-  tunr sources [--json]       List live windows + assignments (TSV)
+  tunr sources [list] [--json]            List live windows + assignments (TSV)
+  tunr sources assign <key> <channel>     Assign a window to a channel
+  tunr sources unassign <key> <channel>   Unassign
   tunr channels [list]        List channels
   tunr channels add <name>    Create channel
   tunr channels rm <name>     Delete channel
-  tunr assign <key> <ch>      Assign a window-key to a channel
-  tunr unassign <key> <ch>    Unassign
   tunr deny [list]            List deny rules
   tunr deny add [--app G] [--title G] [--url G]
   tunr deny rm <index>
@@ -108,6 +98,6 @@ Usage:
   tunr export / import        Move captures between machines
 
 fzf example:
-  tunr sources | fzf --bind 'enter:execute(tunr assign {1} Hobby)'`);
+  tunr sources | fzf --bind 'enter:execute(tunr sources assign {1} Hobby)'`);
     process.exit(command ? 1 : 0);
 }

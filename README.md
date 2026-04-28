@@ -105,12 +105,12 @@ All controls — channels, source assignment, deny rules, settings — are CLI s
 |---------|-------------|
 | `tunr start` | Run the foreground capture engine |
 | `tunr log [-f\|--follow]` | Print recent captures (tail with `--follow`) |
-| `tunr sources [--json]` | List currently detected windows + their channel assignments (TSV) |
+| `tunr sources [list] [--json]` | List currently detected windows + their channel assignments (TSV) |
+| `tunr sources assign <window-key> <channel>` | Assign a window to a channel |
+| `tunr sources unassign <window-key> <channel>` | Unassign |
 | `tunr channels` | List channels |
 | `tunr channels add <name>` | Create a channel |
 | `tunr channels rm <name>` | Delete a channel |
-| `tunr assign <window-key> <channel>` | Assign a window to a channel |
-| `tunr unassign <window-key> <channel>` | Unassign |
 | `tunr deny` | List deny rules |
 | `tunr deny add [--app G] [--title G] [--url G]` | Add a deny rule (glob) |
 | `tunr deny rm <index>` | Remove a deny rule |
@@ -132,8 +132,8 @@ Channels are named groups of windows. Create one with `tunr channels add <name>`
 `tunr sources` outputs TSV starting with the window key, which is exactly what fzf wants:
 
 ```bash
-tunr sources | fzf --bind 'enter:execute(tunr assign {1} Hobby)'
-tunr sources | fzf -m | awk '{print $1}' | xargs -n1 -I{} tunr assign {} Hobby
+tunr sources | fzf --bind 'enter:execute(tunr sources assign {1} Hobby)'
+tunr sources | fzf -m | awk '{print $1}' | xargs -n1 -I{} tunr sources assign {} Hobby
 ```
 
 #### Deny list

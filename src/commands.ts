@@ -66,17 +66,43 @@ function parseValue(s: string): any {
 // --- sources ---
 
 export function runSources(args: string[]) {
-  const json = args.includes("--json");
-  const rows = listSources();
-  if (json) {
-    console.log(JSON.stringify(rows));
+  const hasVerb = args[0] && !args[0].startsWith("--");
+  const sub = hasVerb ? args[0] : "list";
+  const rest = hasVerb ? args.slice(1) : args;
+
+  if (sub === "list") {
+    const json = rest.includes("--json");
+    const rows = listSources();
+    if (json) {
+      console.log(JSON.stringify(rows));
+      return;
+    }
+    for (const r of rows) {
+      const ch = r.channels.length ? r.channels.join(",") : "-";
+      const v = r.virtual ? "virtual" : "window";
+      console.log(`${r.window_key}\t${r.app}\t${r.title}\t${ch}\t${v}`);
+    }
     return;
   }
-  for (const r of rows) {
-    const ch = r.channels.length ? r.channels.join(",") : "-";
-    const v = r.virtual ? "virtual" : "window";
-    console.log(`${r.window_key}\t${r.app}\t${r.title}\t${ch}\t${v}`);
+
+  if (sub === "assign" || sub === "unassign") {
+    const [windowKey, channel] = rest;
+    if (!windowKey || !channel) {
+      console.error(`usage: tunr sources ${sub} <window-key> <channel>`);
+      process.exit(1);
+    }
+    if (sub === "assign" && !getChannels().some(c => c.name === channel)) {
+      console.error(`channel not found: ${channel}`);
+      process.exit(1);
+    }
+    if (sub === "assign") assignSource(windowKey, channel);
+    else unassignSource(windowKey, channel);
+    console.log(`${sub === "assign" ? "assigned" : "unassigned"} ${windowKey} -> ${channel}`);
+    return;
   }
+
+  console.error(`unknown subcommand: ${sub}`);
+  process.exit(1);
 }
 
 // --- channels ---
@@ -112,26 +138,6 @@ export function runChannels(args: string[]) {
   }
   console.error(`unknown subcommand: ${sub}`);
   process.exit(1);
-}
-
-// --- assign / unassign ---
-
-export function runAssign(args: string[]) {
-  const [windowKey, channel] = args;
-  if (!windowKey || !channel) { console.error("usage: tunr assign <window-key> <channel>"); process.exit(1); }
-  if (!getChannels().some(c => c.name === channel)) {
-    console.error(`channel not found: ${channel}`);
-    process.exit(1);
-  }
-  assignSource(windowKey, channel);
-  console.log(`assigned ${windowKey} -> ${channel}`);
-}
-
-export function runUnassign(args: string[]) {
-  const [windowKey, channel] = args;
-  if (!windowKey || !channel) { console.error("usage: tunr unassign <window-key> <channel>"); process.exit(1); }
-  unassignSource(windowKey, channel);
-  console.log(`unassigned ${windowKey} -> ${channel}`);
 }
 
 // --- deny ---
