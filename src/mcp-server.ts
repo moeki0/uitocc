@@ -42,6 +42,37 @@ function openDb(): Database | null {
   }
 }
 
+// Resolve a time range from {from, to, minutes}. `from`/`to` accept ISO strings or YYYY-MM-DD.
+// When `from` is given it overrides `minutes`. When `to` is given without `from`, the window
+// is `[to - minutes, to]` so a past `to` doesn't collapse to zero results.
+function resolveRange(args: any, defaultMinutes: number): { fromIso: string; toIso: string | null; label: string } {
+  const fromArg = args?.from as string | undefined;
+  const toArg = args?.to as string | undefined;
+  const minutesRaw = args?.minutes as number | undefined;
+  const minutes = (typeof minutesRaw === "number" && minutesRaw > 0) ? minutesRaw : defaultMinutes;
+  const norm = (s: string, kind: "from" | "to"): Date => {
+    const endOfDay = kind === "to";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+      return new Date(s + (endOfDay ? "T23:59:59.999" : "T00:00:00"));
+    }
+    return new Date(s);
+  };
+  const fromDate = fromArg ? norm(fromArg, "from") : null;
+  const toDate = toArg ? norm(toArg, "to") : null;
+  if (fromDate && isNaN(fromDate.getTime())) throw new Error(`Invalid \`from\`: ${fromArg}`);
+  if (toDate && isNaN(toDate.getTime())) throw new Error(`Invalid \`to\`: ${toArg}`);
+  const toIso = toDate ? toDate.toISOString() : null;
+  const fromIso = fromDate
+    ? fromDate.toISOString()
+    : toDate
+      ? new Date(toDate.getTime() - minutes * 60_000).toISOString()
+      : new Date(Date.now() - minutes * 60_000).toISOString();
+  const label = fromArg
+    ? (toArg ? `${fromArg}..${toArg}` : `since ${fromArg}`)
+    : (toArg ? `${minutes} minutes before ${toArg}` : `last ${minutes} minutes`);
+  return { fromIso, toIso, label };
+}
+
 
 // --- Embedding helpers ---
 const EMBED_PATH = join(dirname(process.execPath), "tunr-embed");
@@ -157,7 +188,15 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
           minutes: {
             type: "number",
-            description: "Only search within the last N minutes (default: 60)",
+            description: "Only search within the last N minutes (default: 60). Ignored if `from` is set.",
+          },
+          from: {
+            type: "string",
+            description: "Start of time range (ISO datetime or YYYY-MM-DD; YYYY-MM-DD is interpreted as local-time start-of-day). Overrides `minutes`. When using a wide range, raise `limit` to avoid being capped.",
+          },
+          to: {
+            type: "string",
+            description: "End of time range (ISO datetime or YYYY-MM-DD; YYYY-MM-DD is end-of-day local). Optional upper bound. If `to` is given without `from`, the window is `minutes` wide ending at `to`.",
           },
           limit: {
             type: "number",
@@ -184,7 +223,15 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
           minutes: {
             type: "number",
-            description: "How far back to look in minutes (default: 10)",
+            description: "How far back to look in minutes (default: 10). Ignored if `from` is set.",
+          },
+          from: {
+            type: "string",
+            description: "Start of time range (ISO datetime or YYYY-MM-DD; YYYY-MM-DD is interpreted as local-time start-of-day). Overrides `minutes`. When using a wide range, raise `limit` to avoid being capped.",
+          },
+          to: {
+            type: "string",
+            description: "End of time range (ISO datetime or YYYY-MM-DD; YYYY-MM-DD is end-of-day local). Optional upper bound. If `to` is given without `from`, the window is `minutes` wide ending at `to`.",
           },
           limit: {
             type: "number",
@@ -211,7 +258,15 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
           minutes: {
             type: "number",
-            description: "How far back to look in minutes (default: 10)",
+            description: "How far back to look in minutes (default: 10). Ignored if `from` is set.",
+          },
+          from: {
+            type: "string",
+            description: "Start of time range (ISO datetime or YYYY-MM-DD; YYYY-MM-DD is interpreted as local-time start-of-day). Overrides `minutes`. When using a wide range, raise `limit` to avoid being capped.",
+          },
+          to: {
+            type: "string",
+            description: "End of time range (ISO datetime or YYYY-MM-DD; YYYY-MM-DD is end-of-day local). Optional upper bound. If `to` is given without `from`, the window is `minutes` wide ending at `to`.",
           },
           limit: {
             type: "number",
@@ -260,7 +315,15 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
           minutes: {
             type: "number",
-            description: "Only search within the last N minutes (default: 60)",
+            description: "Only search within the last N minutes (default: 60). Ignored if `from` is set.",
+          },
+          from: {
+            type: "string",
+            description: "Start of time range (ISO datetime or YYYY-MM-DD; YYYY-MM-DD is interpreted as local-time start-of-day). Overrides `minutes`. When using a wide range, raise `limit` to avoid being capped.",
+          },
+          to: {
+            type: "string",
+            description: "End of time range (ISO datetime or YYYY-MM-DD; YYYY-MM-DD is end-of-day local). Optional upper bound. If `to` is given without `from`, the window is `minutes` wide ending at `to`.",
           },
           limit: {
             type: "number",
@@ -283,7 +346,15 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
           minutes: {
             type: "number",
-            description: "How far back to look in minutes (default: 60)",
+            description: "How far back to look in minutes (default: 60). Ignored if `from` is set.",
+          },
+          from: {
+            type: "string",
+            description: "Start of time range (ISO datetime or YYYY-MM-DD; YYYY-MM-DD is interpreted as local-time start-of-day). Overrides `minutes`. When using a wide range, raise `limit` to avoid being capped.",
+          },
+          to: {
+            type: "string",
+            description: "End of time range (ISO datetime or YYYY-MM-DD; YYYY-MM-DD is end-of-day local). Optional upper bound. If `to` is given without `from`, the window is `minutes` wide ending at `to`.",
           },
           limit: {
             type: "number",
@@ -379,12 +450,15 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       const query = (args as any).query as string;
       const channelFilter = (args as any).channel as string | undefined;
       const appFilter = (args as any).app as string | undefined;
-      const minutes = ((args as any).minutes as number) || 60;
       const limit = ((args as any).limit as number) || 20;
-      const since = new Date(Date.now() - minutes * 60_000).toISOString();
+      const { fromIso: since, toIso, label: rangeLabel } = resolveRange(args, 60);
       // Build parameterized clauses for app/channel filters
       const extraClauses: string[] = [];
       const extraParams: any[] = [];
+      if (toIso) {
+        extraClauses.push(`timestamp <= ?`);
+        extraParams.push(toIso);
+      }
       if (appFilter) {
         extraClauses.push(`(app LIKE ? OR window_title LIKE ?)`);
         extraParams.push(`%${appFilter}%`, `%${appFilter}%`);
@@ -409,6 +483,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
         if (!appFilter) {
           let ingestClauses = "timestamp > ? AND embedding IS NOT NULL";
           const ingestParams: any[] = [since];
+          if (toIso) { ingestClauses += ` AND timestamp <= ?`; ingestParams.push(toIso); }
           if (channelFilter) {
             ingestClauses += ` AND channel_name = ?`;
             ingestParams.push(channelFilter);
@@ -468,6 +543,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       if (!appFilter) {
         let ingestLikeClauses = "timestamp > ? AND text LIKE ?";
         const ingestLikeParams: any[] = [since, `%${query}%`];
+        if (toIso) { ingestLikeClauses += ` AND timestamp <= ?`; ingestLikeParams.push(toIso); }
         if (channelFilter) {
           ingestLikeClauses += ` AND channel_name = ?`;
           ingestLikeParams.push(channelFilter);
@@ -483,7 +559,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
         .slice(0, limit);
 
       if (rows.length === 0) {
-        return { content: [{ type: "text" as const, text: `No history matching "${query}" in the last ${minutes} minutes.` }] };
+        return { content: [{ type: "text" as const, text: `No history matching "${query}" in ${rangeLabel}.` }] };
       }
 
       const result = rows.map((r) => {
@@ -512,12 +588,12 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
     try {
       const channelFilter = (args as any)?.channel as string | undefined;
       const appFilter = (args as any)?.app as string | undefined;
-      const minutes = ((args as any)?.minutes as number) || 10;
       const limit = ((args as any)?.limit as number) || 20;
-      const since = new Date(Date.now() - minutes * 60_000).toISOString();
+      const { fromIso: since, toIso, label: rangeLabel } = resolveRange(args, 10);
 
       const extraClauses: string[] = [];
       const extraParams: any[] = [];
+      if (toIso) { extraClauses.push(`timestamp <= ?`); extraParams.push(toIso); }
       if (appFilter) {
         extraClauses.push(`(app LIKE ? OR window_title LIKE ?)`);
         extraParams.push(`%${appFilter}%`, `%${appFilter}%`);
@@ -539,6 +615,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       if (!appFilter) {
         let ingestWhere = "timestamp > ?";
         const ingestParams: any[] = [since];
+        if (toIso) { ingestWhere += ` AND timestamp <= ?`; ingestParams.push(toIso); }
         if (channelFilter) {
           ingestWhere += ` AND channel_name = ?`;
           ingestParams.push(channelFilter);
@@ -554,7 +631,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
         .slice(0, limit);
 
       if (allRows.length === 0) {
-        return { content: [{ type: "text" as const, text: `No screen history in the last ${minutes} minutes.` }] };
+        return { content: [{ type: "text" as const, text: `No screen history in ${rangeLabel}.` }] };
       }
 
       const content: any[] = [];
@@ -582,13 +659,13 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       return { content: [{ type: "text" as const, text: "No audio history available. Is the watch daemon running?" }] };
     }
     try {
-      const minutes = ((args as any)?.minutes as number) || 10;
       const limit = ((args as any)?.limit as number) || 20;
       const source = (args as any)?.source as string | undefined;
-      const since = new Date(Date.now() - minutes * 60_000).toISOString();
+      const { fromIso: since, toIso, label: rangeLabel } = resolveRange(args, 10);
 
       let sql = `SELECT timestamp, transcript, source FROM audio_transcripts WHERE timestamp > ?`;
       const params: any[] = [since];
+      if (toIso) { sql += ` AND timestamp <= ?`; params.push(toIso); }
       if (source) { sql += ` AND source = ?`; params.push(source); }
       sql += ` ORDER BY timestamp DESC LIMIT ?`;
       params.push(limit);
@@ -596,7 +673,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       const rows = db.prepare(sql).all(...params) as any[];
 
       if (rows.length === 0) {
-        return { content: [{ type: "text" as const, text: `No audio transcripts in the last ${minutes} minutes.` }] };
+        return { content: [{ type: "text" as const, text: `No audio transcripts in ${rangeLabel}.` }] };
       }
 
       const result = rows.map((r) =>
@@ -616,13 +693,13 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
     }
     try {
       const query = (args as any).query as string;
-      const minutes = ((args as any).minutes as number) || 60;
       const limit = ((args as any).limit as number) || 20;
       const source = (args as any)?.source as string | undefined;
-      const since = new Date(Date.now() - minutes * 60_000).toISOString();
+      const { fromIso: since, toIso, label: rangeLabel } = resolveRange(args, 60);
 
       let sql = `SELECT timestamp, transcript, source FROM audio_transcripts WHERE timestamp > ? AND transcript LIKE ?`;
       const params: any[] = [since, `%${query}%`];
+      if (toIso) { sql += ` AND timestamp <= ?`; params.push(toIso); }
       if (source) { sql += ` AND source = ?`; params.push(source); }
       sql += ` ORDER BY timestamp DESC LIMIT ?`;
       params.push(limit);
@@ -630,7 +707,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       const rows = db.prepare(sql).all(...params) as any[];
 
       if (rows.length === 0) {
-        return { content: [{ type: "text" as const, text: `No audio transcripts matching "${query}" in the last ${minutes} minutes.` }] };
+        return { content: [{ type: "text" as const, text: `No audio transcripts matching "${query}" in ${rangeLabel}.` }] };
       }
 
       const result = rows.map((r) =>
@@ -650,18 +727,20 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
     }
     try {
       const titleFilter = (args as any).title as string;
-      const minutes = ((args as any).minutes as number) || 60;
       const limit = ((args as any).limit as number) || 50;
-      const since = new Date(Date.now() - minutes * 60_000).toISOString();
+      const { fromIso: since, toIso, label: rangeLabel } = resolveRange(args, 60);
 
-      const rows = db.prepare(
-        `SELECT timestamp, app, window_title, window_id, texts, diff_text FROM screen_states
-         WHERE timestamp > ? AND window_title LIKE ?
-         ORDER BY timestamp ASC LIMIT ?`
-      ).all(since, `%${titleFilter}%`, limit) as any[];
+      let sql = `SELECT timestamp, app, window_title, window_id, texts, diff_text FROM screen_states
+         WHERE timestamp > ? AND window_title LIKE ?`;
+      const params: any[] = [since, `%${titleFilter}%`];
+      if (toIso) { sql += ` AND timestamp <= ?`; params.push(toIso); }
+      sql += ` ORDER BY timestamp ASC LIMIT ?`;
+      params.push(limit);
+
+      const rows = db.prepare(sql).all(...params) as any[];
 
       if (rows.length === 0) {
-        return { content: [{ type: "text" as const, text: `No page history matching "${titleFilter}" in the last ${minutes} minutes.` }] };
+        return { content: [{ type: "text" as const, text: `No page history matching "${titleFilter}" in ${rangeLabel}.` }] };
       }
 
       const result = rows.map((r, i) => {
