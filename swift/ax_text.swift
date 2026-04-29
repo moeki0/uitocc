@@ -93,7 +93,7 @@ func getBrowserTabTexts(appScriptName: String) -> [[String: Any]] {
             set u to URL of tab i of window w
             try
                 tell tab i of window w
-                    set txt to execute javascript "document.body.innerText.substring(0, 5000)"
+                    set txt to execute javascript "(function(){var c=document.body.cloneNode(true);c.querySelectorAll('img').forEach(function(i){var a=(i.getAttribute('alt')||'').trim();var s=i.src||'';var p=[a,s].filter(Boolean).join(' ');if(p){i.parentNode.replaceChild(document.createTextNode(' '+p+' '),i);}});return c.innerText.substring(0,5000);})()"
                 end tell
             on error
                 set txt to ""
