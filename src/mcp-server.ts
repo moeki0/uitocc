@@ -18,6 +18,7 @@ const DB_PATH = join(DATA_DIR, "tunr.db");
 try {
   if (existsSync(DB_PATH)) {
     const initDb = new Database(DB_PATH);
+    initDb.run("PRAGMA busy_timeout=5000");
     initDb.run(`CREATE TABLE IF NOT EXISTS ingested (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       timestamp TEXT NOT NULL,
@@ -36,6 +37,7 @@ function openDb(): Database | null {
   try {
     if (!existsSync(DB_PATH)) return null;
     const db = new Database(DB_PATH, { readonly: true });
+    db.run("PRAGMA busy_timeout=5000");
     return db;
   } catch {
     return null;

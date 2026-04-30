@@ -42,6 +42,7 @@ await Bun.write(join(DATA_DIR, ".keep"), "");
 await Bun.write(join(SCREENSHOT_DIR, ".keep"), "");
 const db = new Database(DB_PATH);
 db.run("PRAGMA journal_mode=WAL");
+db.run("PRAGMA busy_timeout=5000");
 
 const ts = new Date().toISOString();
 const textsJson = JSON.stringify(w.texts);

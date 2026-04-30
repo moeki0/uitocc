@@ -7,7 +7,7 @@ export const AUDIO_DIR = join(DATA_DIR, "audio");
 export const SCREENSHOT_DIR = join(DATA_DIR, "screenshots");
 export const SETTINGS_PATH = join(DATA_DIR, "settings.json");
 
-export const VERSION = "2.2.0";
+export const VERSION = "2.4.0";
 export const POLL_MS = 3000;
 export const AUDIO_SOURCE_KEY = "audio:0";
 export const MIC_SOURCE_KEY = "mic:0";

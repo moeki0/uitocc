@@ -7,6 +7,7 @@ await Bun.write(join(DATA_DIR, ".keep"), ""); // ensure dir exists
 
 export const db = new Database(DB_PATH);
 db.run("PRAGMA journal_mode=WAL");
+db.run("PRAGMA busy_timeout=5000");
 db.run(`CREATE TABLE IF NOT EXISTS screen_states (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   timestamp TEXT NOT NULL,
