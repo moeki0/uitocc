@@ -10,6 +10,7 @@ process.env.TUNR_DB_PATH = join(tmpDir, "tunr.db");
 const { db } = await import("./lib/db");
 const { runExport } = await import("./export");
 const { runImport } = await import("./import");
+const { runRm } = await import("./commands");
 
 const seed = () => {
   db.run(`DELETE FROM screen_states`);
@@ -128,5 +129,18 @@ describe("export → import round-trip", () => {
       `INSERT OR IGNORE INTO ingested (timestamp, source, channel_name, text, meta) VALUES (?, ?, ?, ?, ?)`
     ).run("2026-04-27T10:10:00.000Z", "git", "dev", "commit msg", null);
     expect(counts()).toEqual(before);
+  });
+
+  test("rm deletes audio file referenced by audio transcript", () => {
+    seed();
+    const audioPath = join(tmpDir, "audio.wav");
+    writeFileSync(audioPath, "wav");
+    const row = db.prepare(`SELECT id FROM audio_transcripts LIMIT 1`).get() as any;
+    db.prepare(`UPDATE audio_transcripts SET audio_path = ? WHERE id = ?`).run(audioPath, row.id);
+
+    runRm([`a${row.id}`]);
+
+    expect(existsSync(audioPath)).toBe(false);
+    expect(counts().audio).toBe(0);
   });
 });

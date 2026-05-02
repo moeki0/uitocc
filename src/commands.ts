@@ -320,9 +320,13 @@ export function runRm(args: string[]) {
       const r = db.run(`DELETE FROM screen_states WHERE id = ?`, [id]);
       if (r.changes > 0) { console.log(`removed s${id}`); removed++; }
     } else {
+      const row = db.prepare(`SELECT audio_path FROM audio_transcripts WHERE id = ?`).get(id) as any;
+      if (!row) { console.error(`skip: a${id} not found`); continue; }
+      if (row.audio_path) {
+        try { unlinkSync(row.audio_path); } catch {}
+      }
       const r = db.run(`DELETE FROM audio_transcripts WHERE id = ?`, [id]);
       if (r.changes > 0) { console.log(`removed a${id}`); removed++; }
-      else console.error(`skip: a${id} not found`);
     }
   }
   if (removed === 0) process.exit(1);

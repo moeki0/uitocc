@@ -1,6 +1,6 @@
 import { join, dirname } from "path";
 import { homedir } from "os";
-import { unlinkSync } from "fs";
+import { readdirSync, statSync, unlinkSync } from "fs";
 
 import type { DenyRule } from "./types";
 import {
@@ -42,6 +42,9 @@ type Logger = (level: "info" | "warn" | "error", msg: string, extra?: Record<str
 export function startEngine(log: Logger = defaultLog): EngineHandle {
   const settings = loadSettings();
   let active = true;
+
+  cleanupAudioChunks(AUDIO_DIR, log);
+  cleanupAudioChunks(MIC_DIR, log);
 
   // Reload settings.json on changes (single source of truth for runtime config)
   const reloadSettings = async () => {
@@ -196,7 +199,7 @@ export function startEngine(log: Logger = defaultLog): EngineHandle {
               const chunk = JSON.parse(line);
               if (!chunk || typeof chunk.file !== "string" || typeof chunk.timestamp !== "string") continue;
               const wp = Bun.spawnSync(["whisper-cli", "-m", modelPath, "-l", "auto", "-f", chunk.file, "-np", "-nt"], { stdout: "pipe", stderr: "pipe" });
-              try { unlinkSync(chunk.file); } catch {}
+              deleteAudioChunk(chunk.file, log);
               if (wp.exitCode !== 0) continue;
               const transcript = wp.stdout.toString().trim();
               if (transcript) {
@@ -233,4 +236,28 @@ function defaultLog(level: "info" | "warn" | "error", msg: string, extra?: Recor
   const line = `${ts} ${tag} ${msg}${e}`;
   if (level === "error") console.error(line);
   else console.log(line);
+}
+
+function deleteAudioChunk(file: string, log: Logger) {
+  try {
+    unlinkSync(file);
+  } catch (err: any) {
+    if (err?.code !== "ENOENT") log("warn", "audio cleanup failed", { file, error: String(err) });
+  }
+}
+
+function cleanupAudioChunks(dir: string, log: Logger) {
+  try {
+    for (const name of readdirSync(dir)) {
+      if (name === ".keep") continue;
+      const file = join(dir, name);
+      try {
+        if (statSync(file).isFile()) deleteAudioChunk(file, log);
+      } catch (err: any) {
+        if (err?.code !== "ENOENT") log("warn", "audio cleanup failed", { file, error: String(err) });
+      }
+    }
+  } catch (err: any) {
+    if (err?.code !== "ENOENT") log("warn", "audio cleanup failed", { dir, error: String(err) });
+  }
 }
